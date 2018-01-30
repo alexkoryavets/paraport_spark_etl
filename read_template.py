@@ -23,7 +23,7 @@ class pipeline:
 	pass
 
 class pipelinestep:
-	def __init__(self, dct):
+	def __init__(self, dict):
 		self.sources		= {}
 		self.destinations	= {}
 		self.transformations= {}
@@ -41,8 +41,13 @@ class dataobject:
 	pass
 
 class transformation:
-	def __init__(self):
-		
+	def __init__(self, dict):
+		self.action			= dict['action']
+		self.source_1		= dict['source 1']
+		self.source_2		= dict['source 2']
+		self.destination_1	= dict['destination 1']
+		self.destination_2	= dict['destination 2']
+
 	pass
 
 #--------------------------------------------------------------------------------------------------
@@ -82,8 +87,8 @@ def readConfig(inputFile):
 		
 		for curStp in bufSteps:
 			objStep = pipelinestep(bufSteps[curStp])
-			bufDataobjects = readArray(bufSteps[curStp], 'sources')
 
+			bufDataobjects = readArray(bufSteps[curStp], 'sources')
 			for curDS in bufDataobjects:
 				objSource = dataobject(bufDataobjects[curDS])
 				objSource.columns = readArray(bufDataobjects[curDS], 'columns')
@@ -94,6 +99,11 @@ def readConfig(inputFile):
 				objDest = dataobject(bufDataobjects[curDS])
 				objDest.columns = readArray(bufDataobjects[curDS], 'columns')
 				objStep.destinations[curDS] = objDest
+			
+			bufTransformations = readArray(bufSteps[curStp], 'transformations')
+			for curTf in bufTransformations:
+				objTf = transformation(bufTransformations[curTf])
+				objStep.transformations[curTf] = objTf
 
 			objPipeline.steps[curStp] = objStep
 			
@@ -140,7 +150,7 @@ if __name__ == "__main__":
 		dctPipelines = readConfig(CONFIG_FILE)
 		print(len(dctPipelines))
 
-		sc = initializeSpark()
+#		sc = initializeSpark()
 
 	except:
 		raise
