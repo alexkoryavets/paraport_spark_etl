@@ -1,0 +1,56 @@
+pipelines:
+    - pipeline 1:
+        steps:
+            - step 1:
+                name: Load Some Table
+                description: Loading some table from HDFS into Hive
+                action: load
+                sources:
+                    - source_1:
+                        path: hdfs://sandbox.myhost.com:8020/user/input/somefile
+                        type: ORC
+                        columns:
+                            - column_1:
+                                position: 1
+                                name:
+                                datatype: int
+                            - column_2:
+                                position:
+                                name: Entity Name
+                                datatype: string
+                            - column_desc:
+                                position: 2
+                                name: Entity Description
+                                datatype: string
+                            - column value:
+                                position:
+                                name: Qty
+                                datatype: money
+                transformations:
+                    - operation:
+                        action: C:\Users\alexk\Documents\Code\the_engine\template.yml
+                        source 1: source_1.*
+                        source 2:
+                        destination 1: destination_1.*
+                        destination 2:
+                destinations:
+                    - destination_1:
+                        path: hdfs://sandbox.myhost.com:8020/user/out/somefile
+                        type: SQL
+                        columns:
+                            - column_1:
+                                position: 1
+                                name: Row ID
+                                datatype: int
+                            - column_2:
+                                position: 2
+                                name: Entity Name
+                                datatype: string
+                            - column_desc:
+                                position: 3
+                                name: Entity Description
+                                datatype: string
+                            - column value:
+                                position: 4
+                                name: Sum Qty
+                                datatype: money
