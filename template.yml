@@ -7,8 +7,8 @@ pipelines:
                 action: load
                 sources:
                     - source_1:
-                        path: hdfs://sandbox.myhost.com:8020/user/input/somefile
-                        type: ORC
+                        path: C:\Temp\hdfs\masterConfig_Completed.csv
+                        format: csv
                         columns:
                             - column_1:
                                 position: 1
@@ -27,16 +27,17 @@ pipelines:
                                 name: Qty
                                 datatype: money
                 transformations:
-                    - operation:
-                        action: C:\Users\alexk\Documents\Code\the_engine\template.yml
+                    - transformation_1:
+                        action: map
                         source 1: source_1.*
                         source 2:
                         destination 1: destination_1.*
                         destination 2:
                 destinations:
                     - destination_1:
-                        path: hdfs://sandbox.myhost.com:8020/user/out/somefile
-                        type: SQL
+                        path: c:\temp\hdfs\parquetTest.parquet
+                        format: Parquet
+                        mode: overwrite
                         columns:
                             - column_1:
                                 position: 1
