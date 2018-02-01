@@ -33,11 +33,22 @@ class pipelinestep:
 		self.description	= dict['description']
 		self.action			= dict['action']
 
-class dataobject:
+class dataset:
 	def __init__(self, dict):
 		self.columns		= {}
 		self.path			= dict['path']
 		self.format			= dict['format']
+
+		if 'hasHeaderRow' in dict:
+			self.hasHeaderRow= dict['hasHeaderRow']
+		else:
+			self.hasHeaderRow= False
+
+		if 'delimiter' in dict:
+			self.delimiter	= dict['delimiter']
+		else:
+			self.delimiter	= ','
+
 		if 'mode' in dict:
 			self.mode		= dict['mode']
 		else:
@@ -79,7 +90,7 @@ def readConfig(inputFile):
 	#	Locals
 	bufPipelines	= {}
 	bufSteps		= {}
-	bufDataobjects	= {}
+	bufDatasets	= {}
 	bufColumns		= {}
 
 	f = open(inputFile, 'r')
@@ -95,95 +106,153 @@ def readConfig(inputFile):
 		for curStp in bufSteps:
 			objStep = pipelinestep(bufSteps[curStp])
 
-			bufDataobjects = readArray(bufSteps[curStp], 'sources')
-			for curDS in bufDataobjects:
-				objSource = dataobject(bufDataobjects[curDS])
-				
-				bufColumns = readArray(bufDataobjects[curDS], 'columns')
+			bufDatasets = readArray(bufSteps[curStp], 'sources')
+			for curDS in bufDatasets:
+				objSource = dataset(bufDatasets[curDS])
+
+				bufColumns = readArray(bufDatasets[curDS], 'columns')
 				for curCol in bufColumns:
 					objColumn = column(bufColumns[curCol])
 					objSource.columns[curCol] = objColumn
 
 				objStep.sources[curDS] = objSource
-			
-			bufDataobjects = readArray(bufSteps[curStp], 'destinations')
-			for curDS in bufDataobjects:
-				objDest = dataobject(bufDataobjects[curDS])
-				
-				bufColumns = readArray(bufDataobjects[curDS], 'columns')
+
+			bufDatasets = readArray(bufSteps[curStp], 'destinations')
+			for curDS in bufDatasets:
+				objDest = dataset(bufDatasets[curDS])
+
+				bufColumns = readArray(bufDatasets[curDS], 'columns')
 				for curCol in bufColumns:
 					objColumn = column(bufColumns[curCol])
 					objDest.columns[curCol] = objColumn
 
 				objStep.destinations[curDS] = objDest
-			
+
 			bufTransformations = readArray(bufSteps[curStp], 'transformations')
 			for curTf in bufTransformations:
 				objTf = transformation(bufTransformations[curTf])
 				objStep.transformations[curTf] = objTf
 
 			objPipeline.steps[curStp] = objStep
-			
+
 		res[curPpl] = objPipeline
-	
+
 	return res;
 
+# #------------------------------------------------
+# def createSchema(inputDataset, inputDataset):
+
+# 	res = StructType()
+
+# 	if (inputDataset.type in ('csv', 'txt') and inputDataset.hasHeaderRow == True):
+# 		headerRow = inputDataset.first()
+
+# 	for curColId in inputDataset.columns:
+# 		curCol = inputDataset.columns[curColId]
+
+# 		# If given position, schema is initialized from inputDataset
+# 		if (curCol.position):
+# 			if 'schema' in dir(inputDataset):
+# 				curField = inputDataset.schema[curCol.position-1]
+# 			else:
+# 				curField = StructField('_' + str(curCol.position), StringType())
+# #			curField.metadata
+# 		else:
+# 			fieldName = curCol.name
+# 			if (curCol.datatype == 'int'):
+# 				fieldDataType = IntegerType()
+# 			elif (curCol.datatype == 'money'):
+# 				fieldDataType = DecimalType(19, 4)
+# 			elif (curCol.datatype == 'double'):
+# 				fieldDataType = DoubleType()
+# 			else:
+# 				fieldDataType = StringType()
+
+# 			curField = StructField(fieldName, fieldDataType)
+
+# 		res.add(curField)
+
+# 	return res;
+
 #------------------------------------------------
-def createSchema(inputDataobject, inputDataset):
+def getDataschema(inputDataset, inputDataobject):
 
 	res = StructType()
 
-	for curColId in inputDataobject.columns:
-		curCol = inputDataobject.columns[curColId]
+	if (inputDataset.format in ('csv', 'txt') and inputDataset.hasHeaderRow == True):
+		headerRow = inputDataobject.first()
 
-		# If given position, schema is initialized from inputDataset
-		if (curCol.position):
-			if 'schema' in dir(inputDataset):
-				curField = inputDataset.schema[curCol.position-1]
-			else:
-				curField = StructField(curColId, StringType())
-#			curField.metadata
-		else:
-			fieldName = curCol.name
-			if (curCol.datatype == 'int'):
-				fieldDataType = IntegerType()
-			elif (curCol.datatype == 'money'):
-				fieldDataType = DecimalType(19, 4)
-			elif (curCol.datatype == 'double'):
-				fieldDataType = DoubleType()
-			else:
-				fieldDataType = StringType()
-			
-			curField = StructField(fieldName, fieldDataType)
-		
-		res.add(curField)
+		for curCol in headerRow:
+			curField = StructField(curCol, StringType())
+			res.add(curField)
+	else:
+		for curCol in inputDataobject:
+			curField = curCol
+			res.add(curField)
 
 	return res;
 
 #------------------------------------------------
-def getDataFrame(inputDataobject):
+def getDataFrame(inputDataset):
 
-	if (inputDataobject.format in ('csv', 'txt')):
-		dataset = sc.textFile(inputDataobject.path).map( lambda x: x.replace('\"',''))
-		dataschema = createSchema(inputDataobject, dataset)
-		res = spark.createDataFrame(dataset, dataschema)
+	if (inputDataset.format in ('csv', 'txt')):
+		txtRDD = sc.textFile(inputDataset.path).map( lambda x: x.replace('\"','')).map(lambda row: row.split(inputDataset.delimiter))
+		dataschema = getDataschema(inputDataset, txtRDD)
+		res = spark.createDataFrame(txtRDD, dataschema)
 	else:
-		res = spark.read.load(inputDataobject.path, format=inputDataobject.format)
-		dataschema = createSchema(inputDataobject, res)
-		
+		res = spark.read.load(inputDataset.path, format=inputDataset.format)
+		dataschema = getDataschema(inputDataset, res)
+
 	return res, dataschema;
 
 #------------------------------------------------
 ## Will do mapping of input table columns to output table columns
-def mapDataFields(inputDataobject, inputDataschema, outputDataobject, transformations):
+def mapDataFields(inputDataset, inputDataschema, outputDataset, transformations):
 
 	res = ''
-	for curSrcCol in inputDataschema:
-		#	For now no mapping, to be modified soon
-		sourceCol = curSrcCol.name
-		destCol = re.sub('[ ,;{}()\\n\\t=]', '', curSrcCol.name)
-		res += (",", "")[res==''] + "`%s` AS `%s`" % (sourceCol, destCol)
-		
+
+	inputColumns = {}
+	#	Placing source columns into dict: position/name->columnId to locate all inputs to be returned
+	for curInputColumnKey in inputDataset.columns:
+		curInputColumn = inputDataset.columns[curInputColumnKey]
+		if (not (curInputColumn.position is None)):
+			key = curInputColumn.position
+		else:
+			key = curInputColumn.name
+
+		if (key in inputColumns):
+			inputColumns[key].append(curInputColumnKey)
+		else:
+			inputColumns[key] = [curInputColumnKey]
+	
+	outputColumns = {}
+	#	Placing destination columns into dict columnId->dict(position,name,datatype) to do mapping from source
+	for curInputColumn in inputDataset.columns.keys():
+		if (curInputColumn in outputDataset.columns):
+			outputColumns[curInputColumn] = { \
+				'position': outputDataset.columns[curInputColumn].position, \
+				'name': re.sub('[ ,;{}()\\n\\t=]', '', outputDataset.columns[curInputColumn].name), \
+				'datatype': outputDataset.columns[curInputColumn].datatype \
+			}	
+
+	resultingColumns = {}
+	#	Navigating through every column in source recordset to do proper mapping
+	for curInputCol in inputDataschema:
+		columnKeys = []
+		if (curInputCol.name in inputColumns.keys()):
+			columnKeys += inputColumns[curInputCol.name]
+		if (inputDataschema.names.index(curInputCol.name)+1 in inputColumns.keys()):
+			columnKeys += inputColumns[inputDataschema.names.index(curInputCol.name)+1]
+
+		for curResColKey in columnKeys:
+			if (curResColKey in outputColumns):
+				resultingColumns[outputColumns[curResColKey]['position']] = "`%s` AS `%s`" % (curInputCol.name, outputColumns[curResColKey]['name'])
+
+	tmp = resultingColumns.items()
+	srt = 	[tmp[k] for k in sorted(tmp)]
+	res = ", ".join(sorted(resultingColumns.items(), key=lambda x:x[0]))
+
+
 	return res;
 
 #------------------------------------------------

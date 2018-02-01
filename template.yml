@@ -9,6 +9,8 @@ pipelines:
                     - source_1:
                         path: C:\Temp\hdfs\masterConfig_Completed.csv
                         format: csv
+                        delimiter: ","
+                        hasHeaderRow: True
                         columns:
                             - column_1:
                                 position: 1
@@ -16,15 +18,15 @@ pipelines:
                                 datatype: int
                             - column_2:
                                 position:
-                                name: Entity Name
+                                name: stepName
                                 datatype: string
                             - column_desc:
-                                position: 2
+                                position: 1
                                 name: Entity Description
                                 datatype: string
                             - column value:
                                 position:
-                                name: Qty
+                                name: stepNo
                                 datatype: money
                 transformations:
                     - transformation_1:
@@ -35,8 +37,8 @@ pipelines:
                         destination 2:
                 destinations:
                     - destination_1:
-                        path: c:\temp\hdfs\parquetTest.parquet
-                        format: Parquet
+                        path: c:\temp\hdfs\output.csv
+                        format: csv
                         mode: overwrite
                         columns:
                             - column_1:
