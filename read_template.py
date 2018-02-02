@@ -69,7 +69,7 @@ class column:
 		self.datatype		= dict['datatype']
 
 #--------------------------------------------------------------------------------------------------
-##	Service methods
+##	Service functions
 #------------------------------------------------
 def readArray(input, collection):
 	res = {}
@@ -174,6 +174,8 @@ def readConfig(inputFile):
 
 # 	return res;
 
+#--------------------------------------------------------------------------------------------------
+##	Base metadata to schema functions
 #------------------------------------------------
 def getDataschema(inputDataset, inputDataobject):
 
@@ -196,15 +198,28 @@ def getDataschema(inputDataset, inputDataobject):
 def getDataFrame(inputDataset):
 
 	if (inputDataset.format in ('csv', 'txt')):
-		txtRDD = sc.textFile(inputDataset.path).map( lambda x: x.replace('\"','')).map(lambda row: row.split(inputDataset.delimiter))
-		dataschema = getDataschema(inputDataset, txtRDD)
-		res = spark.createDataFrame(txtRDD, dataschema)
+		txtRDDRows = sc.textFile(inputDataset.path).map( lambda x: x.replace('\"',''))
+		txtRDDColumns = txtRDDRows.map(lambda row: row.split(inputDataset.delimiter))
+		dataschema = getDataschema(inputDataset, txtRDDColumns)
+
+		#	Removing all header row entires from the RDD
+		if (inputDataset.hasHeaderRow):
+			header = txtRDDRows.first()
+			headerDf = txtRDDRows.filter(lambda l: header in l).distinct()
+			txtRDDNoHeaderRows = txtRDDRows.subtract(headerDf)
+		else:
+			txtRDDNoHeaderRows = txtRDD
+
+		txtRDDNoHeaderColumns = txtRDDNoHeaderRows.map(lambda row: row.split(inputDataset.delimiter))
+		res = spark.createDataFrame(txtRDDNoHeaderColumns, dataschema)
 	else:
 		res = spark.read.load(inputDataset.path, format=inputDataset.format)
 		dataschema = getDataschema(inputDataset, res)
 
 	return res, dataschema;
 
+#--------------------------------------------------------------------------------------------------
+##	Transformation functions
 #------------------------------------------------
 ## Will do mapping of input table columns to output table columns
 def mapDataFields(inputDataset, inputDataschema, outputDataset, transformations):
@@ -248,9 +263,8 @@ def mapDataFields(inputDataset, inputDataschema, outputDataset, transformations)
 			if (curResColKey in outputColumns):
 				resultingColumns[outputColumns[curResColKey]['position']] = "`%s` AS `%s`" % (curInputCol.name, outputColumns[curResColKey]['name'])
 
-	tmp = resultingColumns.items()
-	srt = 	[tmp[k] for k in sorted(tmp)]
-	res = ", ".join(sorted(resultingColumns.items(), key=lambda x:x[0]))
+	#	Assemblying resulting recordset in a row with all fields
+	res = ", ".join([k[1] for k in sorted(resultingColumns.items())])
 
 
 	return res;
@@ -259,18 +273,18 @@ def mapDataFields(inputDataset, inputDataschema, outputDataset, transformations)
 def loadData(source, destination, transformations):
 
 	sourceDF, sourceDataschema = getDataFrame(source)
-	sourceDF.createOrReplaceTempView('sourceData')
+	sourceDF.createOrReplaceTempView(destination)
 
-	sourceDataFields = mapDataFields(source, sourceDataschema, destination, transformations)
+	dataFieldsMapping = mapDataFields(source, sourceDataschema, destination, transformations)
 
-	sourceData = spark.sql("SELECT %s FROM sourceData" % sourceDataFields)
-
-	sourceData.coalesce(1).write.save(destination.path, format=destination.format, mode=destination.mode)
+	res = spark.sql("SELECT %s FROM sourceData" % dataFieldsMapping)
 
 #	destinationDF = getDataFrame(destination, 'Write')
 
-	return;
+	return res;
 
+#--------------------------------------------------------------------------------------------------
+##	Spark specific functions
 #------------------------------------------------
 def initializeSpark():
 	spark = SparkSession \
@@ -297,11 +311,14 @@ if __name__ == "__main__":
 		spark = initializeSpark()
 		sc = spark.sparkContext
 
-		loadData( \
+		sourceData = loadData( \
 			dctPipelines['pipeline 1'].steps['step 1'].sources['source_1'], \
 			dctPipelines['pipeline 1'].steps['step 1'].destinations['destination_1'], \
 			dctPipelines['pipeline 1'].steps['step 1'].transformations['transformation_1'] \
 		)
+
+		sourceData.coalesce(1).write.option("header", destination.hasHeaderRow).option("delimiter", destination.delimiter).save(destination.path, format=destination.format, mode=destination.mode)
+
 
 	except:
 		raise

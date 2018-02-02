@@ -21,7 +21,7 @@ pipelines:
                                 name: stepName
                                 datatype: string
                             - column_desc:
-                                position: 1
+                                position: 
                                 name: Entity Description
                                 datatype: string
                             - column value:
@@ -39,6 +39,9 @@ pipelines:
                     - destination_1:
                         path: c:\temp\hdfs\output.csv
                         format: csv
+                        delimiter: "|"
+                        hasHeaderRow: True
+                        isPersisted: False
                         mode: overwrite
                         columns:
                             - column_1:
