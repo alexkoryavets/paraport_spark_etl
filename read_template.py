@@ -35,24 +35,14 @@ class pipelinestep:
 
 class dataset:
 	def __init__(self, dict):
-		self.columns		= {}
-		self.path			= dict['path']
-		self.format			= dict['format']
+		self.columns			= {}
+		self.path				= dict['path']
+		self.format				= dict['format']
 
-		if 'hasHeaderRow' in dict:
-			self.hasHeaderRow= dict['hasHeaderRow']
-		else:
-			self.hasHeaderRow= False
-
-		if 'delimiter' in dict:
-			self.delimiter	= dict['delimiter']
-		else:
-			self.delimiter	= ','
-
-		if 'mode' in dict:
-			self.mode		= dict['mode']
-		else:
-			self.mode		= 'read'
+		self.hasHeaderRow		= dict.get('hasHeaderRow', False)
+		self.isPersisted		= dict.get('isPersisted', False)
+		self.delimiter			= dict.get('delimiter', ',')
+		self.mode				= dict.get('mode', 'read')
 
 class transformation:
 	def __init__(self, dict):
@@ -208,7 +198,7 @@ def getDataFrame(inputDataset):
 			headerDf = txtRDDRows.filter(lambda l: header in l).distinct()
 			txtRDDNoHeaderRows = txtRDDRows.subtract(headerDf)
 		else:
-			txtRDDNoHeaderRows = txtRDD
+			txtRDDNoHeaderRows = txtRDDRows
 
 		txtRDDNoHeaderColumns = txtRDDNoHeaderRows.map(lambda row: row.split(inputDataset.delimiter))
 		res = spark.createDataFrame(txtRDDNoHeaderColumns, dataschema)
@@ -270,14 +260,18 @@ def mapDataFields(inputDataset, inputDataschema, outputDataset, transformations)
 	return res;
 
 #------------------------------------------------
-def loadData(source, destination, transformations):
+def loadData(pipelineName, stepName, sourceName, destinationName, transformationsName):
 
-	sourceDF, sourceDataschema = getDataFrame(source)
-	sourceDF.createOrReplaceTempView(destination)
+	sourceObj = dctPipelines[pipelineName].steps[stepName].sources[sourceName]
+	destinationObj = dctPipelines[pipelineName].steps[stepName].destinations[destinationName]
+	transformationsObj = dctPipelines[pipelineName].steps[stepName].transformations[transformationsName]
 
-	dataFieldsMapping = mapDataFields(source, sourceDataschema, destination, transformations)
+	sourceDF, sourceDataschema = getDataFrame(sourceObj)
+	sourceDF.createOrReplaceTempView(destinationName)
 
-	res = spark.sql("SELECT %s FROM sourceData" % dataFieldsMapping)
+	dataFieldsMapping = mapDataFields(sourceObj, sourceDataschema, destinationObj, transformationsObj)
+
+	res = spark.sql("SELECT %s FROM %s" % (dataFieldsMapping, destinationName))
 
 #	destinationDF = getDataFrame(destination, 'Write')
 
@@ -311,13 +305,25 @@ if __name__ == "__main__":
 		spark = initializeSpark()
 		sc = spark.sparkContext
 
+		#	TESTING. Temporary hardcoded call for one specific transformation
 		sourceData = loadData( \
-			dctPipelines['pipeline 1'].steps['step 1'].sources['source_1'], \
-			dctPipelines['pipeline 1'].steps['step 1'].destinations['destination_1'], \
-			dctPipelines['pipeline 1'].steps['step 1'].transformations['transformation_1'] \
+			'pipeline 1',
+			'step 1',
+			'source_1',
+			'destination_1',
+			'transformation_1'
+			# dctPipelines['pipeline 1'].steps['step 1'].sources['source_1'], \
+			# dctPipelines['pipeline 1'].steps['step 1'].destinations['destination_1'], \
+			# dctPipelines['pipeline 1'].steps['step 1'].transformations['transformation_1'] \
 		)
 
-		sourceData.coalesce(1).write.option("header", destination.hasHeaderRow).option("delimiter", destination.delimiter).save(destination.path, format=destination.format, mode=destination.mode)
+		#	TESTING. Temporary hardcoded call to save results
+		destination = dctPipelines['pipeline 1'].steps['step 1'].destinations['destination_1']
+
+		sourceData.coalesce(1).write \
+			.option("header", destination.hasHeaderRow) \
+			.option("delimiter", destination.delimiter) \
+			.save(destination.path, format=destination.format, mode=destination.mode)
 
 
 	except:

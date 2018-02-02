@@ -60,3 +60,7 @@ pipelines:
                                 position: 4
                                 name: Sum Qty
                                 datatype: money
+                            - column value:
+                                position: 5
+                                name: Sum Qty
+                                datatype: money
