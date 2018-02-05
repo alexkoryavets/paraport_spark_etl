@@ -67,7 +67,9 @@ def readArray(input, collection):
 	if collection in input:
 		for item in input[collection]:
 			key = next(iter(item))
-			res[key] = item[key]
+			if (key not in res):
+				res[key] = []
+			res[key].append(item[key])
 
 	return res
 
@@ -90,42 +92,53 @@ def readConfig(inputFile):
 	bufDict = readArray(y_file, 'pipelines')
 
 	for curPpl in bufDict:
-		objPipeline = pipeline()
-		bufSteps = readArray(bufDict[curPpl], 'steps')
+		for curPplItem in bufDict[curPpl]:
+			objPipeline = pipeline()
+			bufSteps = readArray(curPplItem, 'steps')
 
-		for curStp in bufSteps:
-			objStep = pipelinestep(bufSteps[curStp])
+			for curStp in bufSteps:
+				for curStpItem in bufSteps[curStp]:
+					objStep = pipelinestep(curStpItem)
 
-			bufDatasets = readArray(bufSteps[curStp], 'sources')
-			for curDS in bufDatasets:
-				objSource = dataset(bufDatasets[curDS])
+					bufDatasets = readArray(curStpItem, 'sources')
+					for curDS in bufDatasets:
+						for curDSItem in bufDatasets[curDS]:
+							objSource = dataset(curDSItem)
 
-				bufColumns = readArray(bufDatasets[curDS], 'columns')
-				for curCol in bufColumns:
-					objColumn = column(bufColumns[curCol])
-					objSource.columns[curCol] = objColumn
+							bufColumns = readArray(curDSItem, 'columns')
+							for curCol in bufColumns:
+								for curColItem in bufColumns[curCol]:
+									objColumn = column(curColItem)
+									if (curCol not in objSource.columns):
+										objSource.columns[curCol] = []
+									objSource.columns[curCol].append(objColumn)
 
-				objStep.sources[curDS] = objSource
+							objStep.sources[curDS] = objSource
 
-			bufDatasets = readArray(bufSteps[curStp], 'destinations')
-			for curDS in bufDatasets:
-				objDest = dataset(bufDatasets[curDS])
+					bufDatasets = readArray(curStpItem, 'destinations')
+					for curDS in bufDatasets:
+						for curDSItem in bufDatasets[curDS]:
+							objDest = dataset(curDSItem)
 
-				bufColumns = readArray(bufDatasets[curDS], 'columns')
-				for curCol in bufColumns:
-					objColumn = column(bufColumns[curCol])
-					objDest.columns[curCol] = objColumn
+							bufColumns = readArray(curDSItem, 'columns')
+							for curCol in bufColumns:
+								for curColItem in bufColumns[curCol]:
+									objColumn = column(curColItem)
+									if (curCol not in objDest.columns):
+										objDest.columns[curCol] = []
+									objDest.columns[curCol].append(objColumn)
 
-				objStep.destinations[curDS] = objDest
+							objStep.destinations[curDS] = objDest
 
-			bufTransformations = readArray(bufSteps[curStp], 'transformations')
-			for curTf in bufTransformations:
-				objTf = transformation(bufTransformations[curTf])
-				objStep.transformations[curTf] = objTf
+					bufTransformations = readArray(curStpItem, 'transformations')
+					for curTf in bufTransformations:
+						for curTfItem in bufTransformations[curTf]:
+							objTf = transformation(curTfItem)
+							objStep.transformations[curTf] = objTf
 
-			objPipeline.steps[curStp] = objStep
+					objPipeline.steps[curStp] = objStep
 
-		res[curPpl] = objPipeline
+			res[curPpl] = objPipeline
 
 	return res;
 
@@ -232,13 +245,16 @@ def mapDataFields(inputDataset, inputDataschema, outputDataset, transformations)
 	
 	outputColumns = {}
 	#	Placing destination columns into dict columnId->dict(position,name,datatype) to do mapping from source
-	for curInputColumn in inputDataset.columns.keys():
-		if (curInputColumn in outputDataset.columns):
-			outputColumns[curInputColumn] = { \
-				'position': outputDataset.columns[curInputColumn].position, \
-				'name': re.sub('[ ,;{}()\\n\\t=]', '', outputDataset.columns[curInputColumn].name), \
-				'datatype': outputDataset.columns[curInputColumn].datatype \
-			}	
+	for curOutputColumn in outputDataset.columns:
+		if (curOutputColumn in inputDataset.columns):
+			curOutputColumnObject = { \
+				'position': outputDataset.columns[curOutputColumn].position, \
+				'name': re.sub('[ ,;{}()\\n\\t=]', '', outputDataset.columns[curOutputColumn].name), \
+				'datatype': outputDataset.columns[curOutputColumn].datatype \
+			}
+			if (curOutputColumn not in outputColumns):
+				outputColumns[curOutputColumn] = []
+			outputColumns[curOutputColumn].append(curOutputColumnObject)
 
 	resultingColumns = {}
 	#	Navigating through every column in source recordset to do proper mapping
