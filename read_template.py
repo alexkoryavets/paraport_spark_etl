@@ -1,8 +1,6 @@
 #--------------------------------------------------------------------------------------------------
 ##	Imports
-import re
 import sys
-import yaml
 
 import pyspark
 from pyspark import SparkConf, SparkContext
@@ -20,8 +18,14 @@ APP_NAME	= 'Spark_Metadata_ETL'
 #--------------------------------------------------------------------------------------------------
 ##	Classes
 class pipeline:
-	def __init__(self):
+	def __init__(self, dict):
 		self.steps			= {}
+
+		bufSteps = readArray(dict, 'steps')
+		for curStp in bufSteps:
+			for curStpItem in bufSteps[curStp]:
+				objStep = pipelinestep(curStpItem)
+				self.steps[curStp] = objStep
 
 class pipelinestep:
 	def __init__(self, dict):
@@ -29,34 +33,63 @@ class pipelinestep:
 		self.destinations	= {}
 		self.transformations= {}
 
-		self.name			= dict['name']
-		self.description	= dict['description']
-		self.action			= dict['action']
+		self.name			= dict.get('name')
+		self.description	= dict.get('description')
+		self.action			= dict.get('action')
+
+		bufDatasets = readArray(dict, 'sources')
+		for curDS in bufDatasets:
+			for curDSItem in bufDatasets[curDS]:
+				objSource = dataset(curDSItem)
+				self.sources[curDS] = objSource
+
+		bufDatasets = readArray(dict, 'destinations')
+		for curDS in bufDatasets:
+			for curDSItem in bufDatasets[curDS]:
+				objDest = dataset(curDSItem)
+				self.destinations[curDS] = objDest
+
+		bufTransformations = readArray(dict, 'transformations')
+		for curTf in bufTransformations:
+			for curTfItem in bufTransformations[curTf]:
+				objTf = transformation(curTfItem)
+				self.transformations[curTf] = objTf
 
 class dataset:
 	def __init__(self, dict):
 		self.columns			= {}
-		self.path				= dict['path']
-		self.format				= dict['format']
+		self.path				= dict.get('path')
+		self.format				= dict.get('format')
 
 		self.hasHeaderRow		= dict.get('hasHeaderRow', False)
 		self.isPersisted		= dict.get('isPersisted', False)
 		self.delimiter			= dict.get('delimiter', ',')
 		self.mode				= dict.get('mode', 'read')
 
+		bufColumns = readArray(dict, 'columns')
+		for curCol in bufColumns:
+			for curColItem in bufColumns[curCol]:
+				objColumn = column(curColItem)
+				if (curCol not in self.columns):
+					self.columns[curCol] = []
+				self.columns[curCol].append(objColumn)
+
+
 class transformation:
 	def __init__(self, dict):
-		self.action			= dict['action']
-		self.source_1		= dict['source 1']
-		self.source_2		= dict['source 2']
-		self.destination_1	= dict['destination 1']
-		self.destination_2	= dict['destination 2']
+		self.action			= dict.get('action')
+		self.source_1		= dict.get('source 1')
+		self.source_2		= dict.get('source 2')
+		self.destination_1	= dict.get('destination 1')
+		self.destination_2	= dict.get('destination 2')
+
+		self.query			= dict.get('query')
 
 class column:
 	def __init__(self, dict):
-		self.name			= dict['name']
-		self.position		= dict['position']
-		self.datatype		= dict['datatype']
+		self.name			= dict.get('name')
+		self.position		= dict.get('position')
+		self.datatype		= dict.get('datatype')
 
 #--------------------------------------------------------------------------------------------------
 ##	Service functions
@@ -76,68 +109,64 @@ def readArray(input, collection):
 #------------------------------------------------
 def readConfig(inputFile):
 
+	# TEMP: Hardcoding configuration per Mei's request
+	y_file = {}
+
+	curPipeline = {}
+	#	Step 1
+	curPipelineStep = {'name': 'Load Some Table', 'description': 'Loading some table from HDFS into Hive', 'action': 'load'}
+
+	curPipelineStepSource = {'path': 'C:\\Temp\\hdfs\\masterConfig_Completed.csv', 'format': 'csv', 'delimiter': ',', 'hasHeaderRow': True}
+	curPipelineStepSourceColumns = [ \
+		{'all_columns': {}}, \
+		{'column_1': {'position': 1, 'name': None, 'datatype': 'int'}}, \
+		{'column_2': {'position': None, 'name': 'stepName', 'datatype': 'string'}}, \
+		{'column_desc': {'position': None, 'name': 'Entity Description', 'datatype': 'string'}}, \
+		{'column value': {'position': None, 'name': 'stepNo', 'datatype': 'money'}}
+	]
+	curPipelineStepSource['columns'] = curPipelineStepSourceColumns
+	curPipelineStep['sources'] = [{'source_1': curPipelineStepSource}]
+
+	curPipelineStepTransformation = {'action': 'map', 'source 1': 'source_1.*', 'source 2': None, 'destination 1': 'destination_1.*', 'destination 2': None}
+	curPipelineStep['transformations'] = [{'transformation_1': curPipelineStepTransformation}]
+
+	curPipelineStepDestination = {}
+	curPipelineStepDestinationColumns = [ \
+		{'column_1': {'position': 1, 'name': 'Row ID', 'datatype': 'int'}}, \
+		{'column_2': {'position': 2, 'name': 'Entity Name', 'datatype': 'string'}}, \
+		{'column_desc': {'position': 3, 'name': 'Entity Description', 'datatype': 'string'}}, \
+		{'column value': {'position': 4, 'name': 'Sum Qty', 'datatype': 'money'}}, \
+		{'column value': {'position': 5, 'name': 'Sum Qty 2', 'datatype': 'money'}}
+	]
+	curPipelineStepDestination['columns'] = curPipelineStepDestinationColumns
+	curPipelineStep['destinations'] = [{'destination_1': curPipelineStepDestination}]
+
+	curPipeline['steps'] = [{'step 1': curPipelineStep}]
+
+	#	Step 2
+	curPipelineStep = {'name': 'Run SQL on Some Table', 'description': 'Running some simple aggregate', 'action': 'SQL'}
+
+	curPipelineStepTransformation = {'action': 'sql', 'query': 'SELECT SUM(SumQty), AVG(SumQty2) FROM destination_1'}
+	curPipelineStep['transformations'] = [{'transformation_1': curPipelineStepTransformation}]
+
+	curPipelineStepDestination = {'path': 'c:\\temp\\hdfs\\output.csv', 'format': 'csv', 'delimiter': '|', 'hasHeaderRow': True, 'isPersisted': False, 'mode': 'overwrite'}
+	curPipelineStep['destinations'] = [{'destination_2': curPipelineStepDestination}]
+
+	curPipeline['steps'].append({'step 2': curPipelineStep})
+	y_file['pipelines'] = []
+	y_file['pipelines'] = [{'pipeline 1': curPipeline}]
+	# /TEMP: 
+
 	#	Result
-	res = {}
-
-	#	Locals
-	bufPipelines	= {}
-	bufSteps		= {}
-	bufDatasets	= {}
-	bufColumns		= {}
-
 	f = open(inputFile, 'r')
 
-	y_file = yaml.load(f)
+	res = {}
 
 	bufDict = readArray(y_file, 'pipelines')
 
 	for curPpl in bufDict:
 		for curPplItem in bufDict[curPpl]:
-			objPipeline = pipeline()
-			bufSteps = readArray(curPplItem, 'steps')
-
-			for curStp in bufSteps:
-				for curStpItem in bufSteps[curStp]:
-					objStep = pipelinestep(curStpItem)
-
-					bufDatasets = readArray(curStpItem, 'sources')
-					for curDS in bufDatasets:
-						for curDSItem in bufDatasets[curDS]:
-							objSource = dataset(curDSItem)
-
-							bufColumns = readArray(curDSItem, 'columns')
-							for curCol in bufColumns:
-								for curColItem in bufColumns[curCol]:
-									objColumn = column(curColItem)
-									if (curCol not in objSource.columns):
-										objSource.columns[curCol] = []
-									objSource.columns[curCol].append(objColumn)
-
-							objStep.sources[curDS] = objSource
-
-					bufDatasets = readArray(curStpItem, 'destinations')
-					for curDS in bufDatasets:
-						for curDSItem in bufDatasets[curDS]:
-							objDest = dataset(curDSItem)
-
-							bufColumns = readArray(curDSItem, 'columns')
-							for curCol in bufColumns:
-								for curColItem in bufColumns[curCol]:
-									objColumn = column(curColItem)
-									if (curCol not in objDest.columns):
-										objDest.columns[curCol] = []
-									objDest.columns[curCol].append(objColumn)
-
-							objStep.destinations[curDS] = objDest
-
-					bufTransformations = readArray(curStpItem, 'transformations')
-					for curTf in bufTransformations:
-						for curTfItem in bufTransformations[curTf]:
-							objTf = transformation(curTfItem)
-							objStep.transformations[curTf] = objTf
-
-					objPipeline.steps[curStp] = objStep
-
+			objPipeline = pipeline(curPplItem)
 			res[curPpl] = objPipeline
 
 	return res;
@@ -232,29 +261,40 @@ def mapDataFields(inputDataset, inputDataschema, outputDataset, transformations)
 	inputColumns = {}
 	#	Placing source columns into dict: position/name->columnId to locate all inputs to be returned
 	for curInputColumnKey in inputDataset.columns:
-		curInputColumn = inputDataset.columns[curInputColumnKey]
-		if (not (curInputColumn.position is None)):
-			key = curInputColumn.position
-		else:
-			key = curInputColumn.name
+		for curInputColumn in inputDataset.columns[curInputColumnKey]:
+			if (not (curInputColumn.position is None)):
+				key = curInputColumn.position
+			else:
+				key = curInputColumn.name
 
-		if (key in inputColumns):
-			inputColumns[key].append(curInputColumnKey)
-		else:
-			inputColumns[key] = [curInputColumnKey]
+			if (key in inputColumns):
+				inputColumns[key].append(curInputColumnKey)
+			else:
+				inputColumns[key] = [curInputColumnKey]
 	
 	outputColumns = {}
 	#	Placing destination columns into dict columnId->dict(position,name,datatype) to do mapping from source
-	for curOutputColumn in outputDataset.columns:
-		if (curOutputColumn in inputDataset.columns):
-			curOutputColumnObject = { \
-				'position': outputDataset.columns[curOutputColumn].position, \
-				'name': re.sub('[ ,;{}()\\n\\t=]', '', outputDataset.columns[curOutputColumn].name), \
-				'datatype': outputDataset.columns[curOutputColumn].datatype \
-			}
-			if (curOutputColumn not in outputColumns):
-				outputColumns[curOutputColumn] = []
-			outputColumns[curOutputColumn].append(curOutputColumnObject)
+	for curOutputColumnKey in outputDataset.columns:
+		for curOutputColumn in outputDataset.columns[curOutputColumnKey]:
+			if (curOutputColumnKey in inputDataset.columns):
+				curOutputColumnObject = { \
+					'position': curOutputColumn.position, \
+					'name': curOutputColumn.name \
+						.replace(' ', '') \
+						.replace(',', '') \
+						.replace(';', '') \
+						.replace('{', '') \
+						.replace('}', '') \
+						.replace('(', '') \
+						.replace(')', '') \
+						.replace('\n', '') \
+						.replace('\t', '') \
+						.replace('=', ''), \
+					'datatype': curOutputColumn.datatype \
+				}
+				if (curOutputColumnKey not in outputColumns):
+					outputColumns[curOutputColumnKey] = []
+				outputColumns[curOutputColumnKey].append(curOutputColumnObject)
 
 	resultingColumns = {}
 	#	Navigating through every column in source recordset to do proper mapping
@@ -266,8 +306,8 @@ def mapDataFields(inputDataset, inputDataschema, outputDataset, transformations)
 			columnKeys += inputColumns[inputDataschema.names.index(curInputCol.name)+1]
 
 		for curResColKey in columnKeys:
-			if (curResColKey in outputColumns):
-				resultingColumns[outputColumns[curResColKey]['position']] = "`%s` AS `%s`" % (curInputCol.name, outputColumns[curResColKey]['name'])
+			for curOutputColumn in outputColumns[curResColKey]:
+				resultingColumns[curOutputColumn['position']] = "`%s` AS `%s`" % (curInputCol.name, curOutputColumn['name'])
 
 	#	Assemblying resulting recordset in a row with all fields
 	res = ", ".join([k[1] for k in sorted(resultingColumns.items())])
@@ -288,6 +328,24 @@ def loadData(pipelineName, stepName, sourceName, destinationName, transformation
 	dataFieldsMapping = mapDataFields(sourceObj, sourceDataschema, destinationObj, transformationsObj)
 
 	res = spark.sql("SELECT %s FROM %s" % (dataFieldsMapping, destinationName))
+
+#	destinationDF = getDataFrame(destination, 'Write')
+
+	return res;
+
+#------------------------------------------------
+def runSQL(pipelineName, stepName, sourceName, destinationName, transformationsName):
+
+	# sourceObj = dctPipelines[pipelineName].steps[stepName].sources[sourceName]
+	# destinationObj = dctPipelines[pipelineName].steps[stepName].destinations[destinationName]
+	transformationsObj = dctPipelines[pipelineName].steps[stepName].transformations[transformationsName]
+
+	# sourceDF, sourceDataschema = getDataFrame(sourceObj)
+	# sourceDF.createOrReplaceTempView(destinationName)
+
+	# dataFieldsMapping = mapDataFields(sourceObj, sourceDataschema, destinationObj, transformationsObj)
+
+	res = spark.sql(transformationsObj.query)
 
 #	destinationDF = getDataFrame(destination, 'Write')
 
@@ -333,10 +391,26 @@ if __name__ == "__main__":
 			# dctPipelines['pipeline 1'].steps['step 1'].transformations['transformation_1'] \
 		)
 
-		#	TESTING. Temporary hardcoded call to save results
-		destination = dctPipelines['pipeline 1'].steps['step 1'].destinations['destination_1']
+		#	TESTING. Temporary hardcoded call to create in-memory dataframe
+		sourceData.createOrReplaceTempView('destination_1')
 
-		sourceData.coalesce(1).write \
+		#	TESTING. Temporary hardcoded call for one specific transformation
+		sqlData = runSQL( \
+			'pipeline 1',
+			'step 2',
+			'source_1',
+			'destination_1',
+			'transformation_1'
+			# dctPipelines['pipeline 1'].steps['step 1'].sources['source_1'], \
+			# dctPipelines['pipeline 1'].steps['step 1'].destinations['destination_1'], \
+			# dctPipelines['pipeline 1'].steps['step 1'].transformations['transformation_1'] \
+		)
+
+		#	TESTING. Temporary hardcoded call to define results saving destination
+		destination = dctPipelines['pipeline 1'].steps['step 2'].destinations['destination_2']
+
+		#	TESTING. Temporary hardcoded call to materialize results
+		sqlData.coalesce(1).write \
 			.option("header", destination.hasHeaderRow) \
 			.option("delimiter", destination.delimiter) \
 			.save(destination.path, format=destination.format, mode=destination.mode)

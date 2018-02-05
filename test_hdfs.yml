@@ -7,27 +7,26 @@ pipelines:
                 action: load
                 sources:
                     - source_1:
-                        path: C:\Temp\hdfs\masterConfig_Completed.csv
-                        format: csv
+                        path: hdfs://sea-2671-01.paraport.com/data/extract/factflat/ymd=20180129/factflat.orc
+                        format: orc
                         delimiter: ","
                         hasHeaderRow: True
                         columns:
-                            - all_columns:
-                            - column_1:
+                            - EXTRACT_DATE:
                                 position: 1
                                 name:
                                 datatype: int
-                            - column_2:
+                            - SHORT_NAME:
                                 position:
-                                name: stepName
+                                name: SHORT_NAME
                                 datatype: string
-                            - column_desc:
-                                position: 
+                            - HOLDING_IDENTIFIER:
+                                position: 3
                                 name: Entity Description
                                 datatype: string
                             - column value:
                                 position:
-                                name: stepNo
+                                name: QUANTITY
                                 datatype: money
                 transformations:
                     - transformation_1:
@@ -38,40 +37,26 @@ pipelines:
                         destination 2:
                 destinations:
                     - destination_1:
+                        path: ~/AlexK/output.csv
+                        format: csv
+                        delimiter: "|"
+                        hasHeaderRow: True
+                        isPersisted: False
+                        mode: overwrite
                         columns:
-                            - column_1:
+                            - EXTRACT_DATE:
                                 position: 1
-                                name: Row ID
+                                name: Date of Extraction
                                 datatype: int
-                            - column_2:
-                                position: 2
-                                name: Entity Name
-                                datatype: string
-                            - column_desc:
+                            - SHORT_NAME:
                                 position: 3
+                                name: Name Short
+                                datatype: string
+                            - HOLDING_IDENTIFIER:
+                                position: 2
                                 name: Entity Description
                                 datatype: string
                             - column value:
                                 position: 4
                                 name: Sum Qty
                                 datatype: money
-                            - column value:
-                                position: 5
-                                name: Sum Qty 2
-                                datatype: money
-            - step 2:
-                name: Run SQL on Some Table
-                description: Running some simple aggregate
-                action: SQL
-                transformations:
-                    - transformation_1:
-                        action: sql
-                        query: SELECT SUM(SumQty), AVG(SumQty2) FROM destination_1
-                destinations:
-                    - destination_2:
-                        path: c:\temp\hdfs\output.csv
-                        format: csv
-                        delimiter: "|"
-                        hasHeaderRow: True
-                        isPersisted: False
-                        mode: overwrite
