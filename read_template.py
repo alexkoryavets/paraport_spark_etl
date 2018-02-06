@@ -109,20 +109,24 @@ def readArray(input, collection):
 #------------------------------------------------
 def readConfig(inputFile):
 
+	f = open(inputFile, 'r')
+
 	# TEMP: Hardcoding configuration per Mei's request
 	y_file = {}
 
 	curPipeline = {}
 	#	Step 1
+
 	curPipelineStep = {'name': 'Load Some Table', 'description': 'Loading some table from HDFS into Hive', 'action': 'load'}
 
-	curPipelineStepSource = {'path': 'C:\\Temp\\hdfs\\masterConfig_Completed.csv', 'format': 'csv', 'delimiter': ',', 'hasHeaderRow': True}
+#	curPipelineStepSource = {'path': 'hdfs://sea-2671-02.paraport.com/data/extract/factflat/ymd=20180129/factflat.orc', 'format': 'orc', 'delimiter': ',', 'hasHeaderRow': True}
+	curPipelineStepSource = {'path': 'c:\\temp\\hdfs\\orcTest.orc', 'format': 'orc', 'delimiter': ',', 'hasHeaderRow': True}
 	curPipelineStepSourceColumns = [ \
 		{'all_columns': {}}, \
-		{'column_1': {'position': 1, 'name': None, 'datatype': 'int'}}, \
-		{'column_2': {'position': None, 'name': 'stepName', 'datatype': 'string'}}, \
-		{'column_desc': {'position': None, 'name': 'Entity Description', 'datatype': 'string'}}, \
-		{'column value': {'position': None, 'name': 'stepNo', 'datatype': 'money'}}
+		{'EXTRACT_DATE': {'position': 1, 'name': None, 'datatype': 'int'}}, \
+		{'SHORT_NAME': {'position': None, 'name': 'SHORT_NAME', 'datatype': 'string'}}, \
+		{'HOLDING_IDENTIFIER': {'position': 3, 'name': 'Entity Description', 'datatype': 'string'}}, \
+		{'column value': {'position': None, 'name': 'QUANTITY', 'datatype': 'money'}}
 	]
 	curPipelineStepSource['columns'] = curPipelineStepSourceColumns
 	curPipelineStep['sources'] = [{'source_1': curPipelineStepSource}]
@@ -132,9 +136,9 @@ def readConfig(inputFile):
 
 	curPipelineStepDestination = {}
 	curPipelineStepDestinationColumns = [ \
-		{'column_1': {'position': 1, 'name': 'Row ID', 'datatype': 'int'}}, \
-		{'column_2': {'position': 2, 'name': 'Entity Name', 'datatype': 'string'}}, \
-		{'column_desc': {'position': 3, 'name': 'Entity Description', 'datatype': 'string'}}, \
+		{'EXTRACT_DATE': {'position': 1, 'name': 'Date of Extraction', 'datatype': 'int'}}, \
+		{'SHORT_NAME': {'position': 3, 'name': 'Name Short', 'datatype': 'string'}}, \
+		{'HOLDING_IDENTIFIER': {'position': 2, 'name': 'Entity Description', 'datatype': 'string'}}, \
 		{'column value': {'position': 4, 'name': 'Sum Qty', 'datatype': 'money'}}, \
 		{'column value': {'position': 5, 'name': 'Sum Qty 2', 'datatype': 'money'}}
 	]
@@ -149,7 +153,7 @@ def readConfig(inputFile):
 	curPipelineStepTransformation = {'action': 'sql', 'query': 'SELECT SUM(SumQty), AVG(SumQty2) FROM destination_1'}
 	curPipelineStep['transformations'] = [{'transformation_1': curPipelineStepTransformation}]
 
-	curPipelineStepDestination = {'path': 'c:\\temp\\hdfs\\output.csv', 'format': 'csv', 'delimiter': '|', 'hasHeaderRow': True, 'isPersisted': False, 'mode': 'overwrite'}
+	curPipelineStepDestination = {'path': '~/AlexK/output.csv', 'format': 'csv', 'delimiter': '|', 'hasHeaderRow': True, 'isPersisted': False, 'mode': 'overwrite'}
 	curPipelineStep['destinations'] = [{'destination_2': curPipelineStepDestination}]
 
 	curPipeline['steps'].append({'step 2': curPipelineStep})
@@ -157,8 +161,8 @@ def readConfig(inputFile):
 	y_file['pipelines'] = [{'pipeline 1': curPipeline}]
 	# /TEMP: 
 
-	#	Result
-	f = open(inputFile, 'r')
+	##	Result
+	# f = open(inputFile, 'r')
 
 	res = {}
 
@@ -220,9 +224,7 @@ def getDataschema(inputDataset, inputDataobject):
 			curField = StructField(curCol, StringType())
 			res.add(curField)
 	else:
-		for curCol in inputDataobject:
-			curField = curCol
-			res.add(curField)
+		res = inputDataobject._schema
 
 	return res;
 
