@@ -1,0 +1,12 @@
+stepNo,columnNo,tgtColumn,exp,aggregation
+1000,1,`FY-Per`,`Month`,
+1000,2,`Planning Unit`,`Planning_Unit`,
+1000,3,`Product Engine`,`Product_Engine`,
+1000,4,`PlanningCat`,`PlanningCat`,
+1000,5,`Customer`,`Customer`,
+1000,6,`Customer Channel Class`,`Customer_Channel_Class`,
+1000,7,`Shipment Type`,`Shipment_Type`,
+1000,8,`L4LCode`,'Import',
+1000,9,`Target Metric`,"CONCAT(`LineItem-Term`, ' ', IF (`LineItem` in ('Prop', 'Quickstrike','Futures','AA QuckStrk','AA'), (translate(`Metric`,'_',' ')), `LineItem`))",
+1000,10,`Term`,`Term`,
+1000,11,`Value`,`Value`,SUM

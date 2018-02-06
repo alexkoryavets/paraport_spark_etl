@@ -1,0 +1,41 @@
+stepNo,stepName,type,srcData,metaData,tgtData,tgtPath,outputFormat,disabled
+1,Load NA transaction File,Load,s3://thegreatlakes/spark/metadata_etl/source/test_merge,,transaction_test,,,
+2,Load customer files,Load,s3://thegreatlakes/spark/metadata_etl/source/CUST_SALES,,Cust_Sales,,,x
+3,Load profit center files,Load,s3://thegreatlakes/spark/metadata_etl/source/PROFIT_CENTER,,Profit_Center,,,x
+4,Load material files,Load,s3://thegreatlakes/spark/metadata_etl/source/MATERIAL,,Material,,,x
+5,Load mat_sales files,Load,s3://thegreatlakes/spark/metadata_etl/source/MAT_SLS,,Mat_Sales,,,x
+6,Load customer hierarchy files,Load,s3://thegreatlakes/spark/metadata_etl/source/Manual/Customer Hierarchy.csv,,customerHierarchy,,,x
+7,Load FI Sales Document De.csv,Load,s3://thegreatlakes/spark/metadata_etl/source/Manual/FI Sales Document De.csv,,FISalesDoc,,,x
+8,Load Item category file,Load,s3://thegreatlakes/spark/metadata_etl/source/Manual/Item category.csv,,Item_category,,,x
+9,Load Reason for Order file,Load,s3://thegreatlakes/spark/metadata_etl/source/Manual/Reason for order.csv,,Reason_for_order,,,x
+10,Load Sales doc type File,Load,s3://thegreatlakes/spark/metadata_etl/source/Manual/Sales doc type.csv,,Sales_doc_type,,,x
+11,Create RKF/CKF Columns,Calculate,BWNATxn,,BWNARKFCKF,,csv,x
+20,Validate customer files,CheckKeyUnique,Cust_Sales,Customer_Sales_Key,Cust_Sales,,csv,x
+21,Validate profit center files,CheckKeyUnique,Profit_Center,Profit_Center_Key,Profit_Center,,csv,x
+22,Validate material files,CheckKeyUnique,Material,Material_Key,Material,,csv,x
+23,Validate mat_sales files,CheckKeyUnique,Mat_Sales,Material_Sls_Key,Mat_Sales,,csv,x
+24,Validate customer hierarchy files,CheckKeyUnique,customerHierarchy,Customer_Key,customerHierarchy,,csv,x
+25,Validate FI Sales Document De.csv,CheckKeyUnique,FISalesDoc,FI_Sales_Document_De_Key,FISalesDoc,,csv,x
+26,Validate Item category file,CheckKeyUnique,Item_category,Item_category_Key,Item_category,,csv,x
+27,Validate Reason for Order file,CheckKeyUnique,Reason_for_order,Reason_for_order_Key,Reason_for_order,,csv,x
+28,Validate Sales doc type File,CheckKeyUnique,Sales_doc_type,Sales_doc_type_Key,Sales_doc_type,,csv,x
+60,NA Join Table,Join,BWNARKFCKF,,BWNAJOINED,,csv,x
+100,BexLogic for NA,LookupFilter,BWNAJOINED,,BWNABEX,,csv,x
+300,NA M4 Month,MapLeft,BWNABEX,s3://thegreatlakes/spark/metadata_etl/Metadata/M4 Month.csv,BWNACrystal1,,,x
+301,M4 Planning Unit PL,MapInner,BWNACrystal1,s3://thegreatlakes/spark/metadata_etl/Metadata/M4 Planning Unit PL.csv,BWNACrystal2,,,x
+302,M4 Shipping Window,MapLeft,BWNACrystal2,s3://thegreatlakes/spark/metadata_etl/Metadata/M4 Shipping Window.csv,BWNACrystal3,,,x
+303,NA Metric LineItem-Term & LineItem-step1,MapLeft,BWNACrystal3,s3://thegreatlakes/spark/metadata_etl/Metadata/NA Metric LineItem-Term & LineItem-step1.csv,BWNACrystal4,,,x
+304,NA Metric LineItem-Term & LineItem-step2,MapLeft,BWNACrystal4,s3://thegreatlakes/spark/metadata_etl/Metadata/NA Metric LineItem-Term & LineItem-step2.csv,BWNACrystal5,,,x
+305,NA-PL Customer Channel Class,MapLeft,BWNACrystal5,s3://thegreatlakes/spark/metadata_etl/Metadata/NA-PL Customer Channel Class.csv,BWNACrystal6,,,x
+306,NA-PL Customer,MapLeft,BWNACrystal6,s3://thegreatlakes/spark/metadata_etl/Metadata/NA-PL Customer.csv,BWNACrystal7,,,x
+307,NA-Product Engine,MapLeft,BWNACrystal7,s3://thegreatlakes/spark/metadata_etl/Metadata/NA-Product Engine.csv,BWNACrystal8,s3://thegreatlakes/spark/metadata_etl/Output/BWNACrystal,csv,x
+1000,NA PL TM1 Logic,SelectTransform,BWNACrystal8,,NAPLTM1,s3://thegreatlakes/spark/metadata_etl/Output/NAPLTM1,csv,x
+1500,MergeOutput BWNARKFCKF,OutputMerge,BWNARKFCKF,,,s3://thegreatlakes/spark/metadata_etl/Output/BWNARKFCKF_merged,csv,x
+1510,MergeOutput BWNAJOINED,OutputMerge,BWNAJOINED,,,s3://thegreatlakes/spark/metadata_etl/Output/BWNASuperset_merged,csv,x
+1520,MergeOutput BWNABEX,OutputMerge,BWNABEX,,,s3://thegreatlakes/spark/metadata_etl/Output/BWNABEX_merged,csv,x
+1530,MergeOutput BWNACrystal8,OutputMerge,BWNACrystal8,,,s3://thegreatlakes/spark/metadata_etl/Output/BWNACrystal_merged,csv,x
+1540,MergeOutput NAPLTM1,OutputMerge,NAPLTM1,,,s3://thegreatlakes/spark/metadata_etl/Output/NAPLTM1_merged,csv,x
+1600,Output BWNAJOINED to Hive,OutputHive,BWNAJOINED,,,,,x
+1620,Output BWNABEX to Hive,OutputHive,BWNABEX,,,,,x
+2000,MergeOutput TRANASCTION,OutputMerge,transaction_test,,,s3://thegreatlakes/spark/metadata_etl/output/test_merge,csv,
+2100,Output transaction_test to Parquet,OutputParquet,transaction_test,,,s3://thegreatlakes/spark/metadata_etl/output/parquet_test,parquet,

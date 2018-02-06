@@ -18,13 +18,14 @@ from pyspark.sql.functions import udf
 ## CONSTANTS
 
 APP_NAME = "Spark_Metadata_ETL"
-WORKFLOW_FOLDER = "s3://thegreatlakes/spark/metadata_etl/config/test_merge/"
+WORKFLOW_FOLDER = "c:\\temp\\hdfs\\"
+#WORKFLOW_FOLDER = "hdfs://thegreatlakes/spark/metadata_etl/config/test_merge/"
 BUCKET_NAME_DICT={}
 DATA_PIPELINE_NAME = ''
 WORKFLOW_BUCKET_NAME = ''
 global CURRENT_ACTION
 global ERROR_MESSAGE
-SNS_ARN_PREFIX="arn:aws:sns:us-west-2:088921935615:Vortex-"
+# SNS_ARN_PREFIX="arn:aws:sns:us-west-2:088921935615:Vortex-"
 NO_MATCH = "noMatch"
 
 ##OTHER FUNCTIONS/CLASSES
@@ -56,36 +57,36 @@ def convertDouble(text2):
             return 0.0
     return 0.0
 
-#-----------------------------------------------------------------------------
+# #-----------------------------------------------------------------------------
 
-def getBucketFromS3Key(s3Key):
-    tokens =  s3Key.split("/")
-    if tokens[0] != 's3' and len(tokens) <= 3:
-        LOGGER.error("Path %s is not a valid s3 path" % s3Key)
-        return None, None
-    else:
-        bucketName = tokens[2]
-        prefix =  "/".join(tokens[3:])
-        return bucketName, prefix
-#-----------------------------------------------------------------------------
+# def getBucketFromS3Key(s3Key):
+#     tokens =  s3Key.split("/")
+#     if tokens[0] != 's3' and len(tokens) <= 3:
+#         LOGGER.error("Path %s is not a valid s3 path" % s3Key)
+#         return None, None
+#     else:
+#         bucketName = tokens[2]
+#         prefix =  "/".join(tokens[3:])
+#         return bucketName, prefix
+# #-----------------------------------------------------------------------------
 
-def changeBucketName(s3Key, bucketName, BUCKET_NAME_DICT):
-    tokens =  s3Key.split("/")
-    if tokens[0] != 's3:' and len(tokens) <= 3:
-        LOGGER.error("Path %s is not a valid s3 path" % s3Key)
-        return None
-    if BUCKET_NAME_DICT.has_key(tokens[2]):
-        tokens[2] = BUCKET_NAME_DICT[tokens[2]]
-    else:
-        #change the bucket name to the default bucket name
-        tokens[2] = bucketName
-    newS3Key =  "/".join(tokens)
-    return newS3Key
+# def changeBucketName(s3Key, bucketName, BUCKET_NAME_DICT):
+#     tokens =  s3Key.split("/")
+#     if tokens[0] != 's3:' and len(tokens) <= 3:
+#         LOGGER.error("Path %s is not a valid s3 path" % s3Key)
+#         return None
+#     if BUCKET_NAME_DICT.has_key(tokens[2]):
+#         tokens[2] = BUCKET_NAME_DICT[tokens[2]]
+#     else:
+#         #change the bucket name to the default bucket name
+#         tokens[2] = bucketName
+#     newS3Key =  "/".join(tokens)
+#     return newS3Key
 
 #-----------------------------------------------------------------------------
 def loadWorkflow(folder, completeWorkFlow, wfList):
     #find the bucket location from folder
-    bucketName, prefix = getBucketFromS3Key(folder)
+    # bucketName, prefix = getBucketFromS3Key(folder)
     workflowFileName = folder + "masterConfig.csv"
     calculationFileName = folder + "calculations.csv"
     joinTableFileName = folder + "joinTableConfig.csv"
@@ -717,12 +718,12 @@ def mappingColumns(wfDict, allDF, joinType, silent):
             nomatchfile = WORKFLOW_FOLDER + NO_MATCH + "/" + wfDict['stepName']
             df.coalesce(1).write.save(nomatchfile, format='csv', header=True, mode='overwrite', sep='|',quote ='"')
             #s = "%s" % df.show()
-            noMatchFileURL = nomatchfile.replace('s3://', 'https://console.aws.amazon.com/s3/buckets/').replace(' ', '%20')
-            response = sns.publish(
-                TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
-                Subject="Non-matching record found in ETL step: %s" % (wfDict['stepName']),
-                Message="Non-matching record found when joining with mapping table during step %s.\n\tmasterConfig location: %s\n\tMapping table location is: %s\n\tPlease check: %s for details.\nNo match:\n\t%s" % (wfDict['stepName'], WORKFLOW_FOLDER, configFilePath, noMatchFileURL, s)
-            )
+            # noMatchFileURL = nomatchfile.replace('s3://', 'https://console.aws.amazon.com/s3/buckets/').replace(' ', '%20')
+            # response = sns.publish(
+            #     TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
+            #     Subject="Non-matching record found in ETL step: %s" % (wfDict['stepName']),
+            #     Message="Non-matching record found when joining with mapping table during step %s.\n\tmasterConfig location: %s\n\tMapping table location is: %s\n\tPlease check: %s for details.\nNo match:\n\t%s" % (wfDict['stepName'], WORKFLOW_FOLDER, configFilePath, noMatchFileURL, s)
+            # )
     return True
 
 def selectTransform(wfDict, allDF):
@@ -870,7 +871,7 @@ def compareValues(wfDict, allDF):
     if len(compareColPhrases) > 0:
         selectColSegment.append(', '.join(compareColPhrases))
     joinColSqlStr = ' AND '.join(joinColPhrases)
-    if configFilePath.startswith("s3://"):
+    if configFilePath.startswith("hdfs://"):
         configDf = spark.read.csv(configFilePath, header=True, schema = newSchema, sep='|')#.filter('stepNo=%d' % wfDict['stepNo'])
     configDf.createOrReplaceTempView('compareTable')
     subQuery = "SELECT %s FROM %s a GROUP BY %s" % (', '.join(innerQuerySelectSegment), baseTable, ', '.join(groupByCols))
@@ -879,13 +880,14 @@ def compareValues(wfDict, allDF):
     return True
 
 #----------------------------------------------------------------------------
+# ???
 def moveFile(path):
     global ERROR_MESSAGE
-    bucketName, prefix = getBucketFromS3Key(path)
-    if bucketName is None:
-        ERROR_MESSAGE = "Cannot get s3 bucket name from %s" % path
-        return False
-    bucket = s3.Bucket(bucketName)
+    # bucketName, prefix = getBucketFromS3Key(path)
+    # if bucketName is None:
+    #     ERROR_MESSAGE = "Cannot get s3 bucket name from %s" % path
+    #     return False
+    # bucket = s3.Bucket(bucketName)
     #
     successFound = False
     numberOfTries = 0
@@ -1007,8 +1009,8 @@ if __name__ == "__main__":
         .getOrCreate()
     sc = spark.sparkContext
 
-    s3 = boto3.session.Session().resource('s3')
-    sns =  boto3.client('sns')
+    # s3 = boto3.session.Session().resource('s3')
+    # sns =  boto3.client('sns')
     log4jLogger = sc._jvm.org.apache.log4j
     LOGGER = log4jLogger.LogManager.getLogger(__name__)
     spark.udf.register('udfConvertInt', convertInt, IntegerType())
@@ -1039,21 +1041,21 @@ if __name__ == "__main__":
             message = 'Vortex ETL process %s.\n\tFailed at: %s\n\t%s\n\t%s' % (statusCode, CURRENT_ACTION, message, ERROR_MESSAGE)
             LOGGER.error(message)
 
-        response = sns.publish(
-                    TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
-                    Subject="Processed Complete - %s - %s, bucket=%s" % (statusCode, DATA_PIPELINE_NAME, WORKFLOW_BUCKET_NAME),
-                    Message=message
-                )     
+        # response = sns.publish(
+        #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
+        #             Subject="Processed Complete - %s - %s, bucket=%s" % (statusCode, DATA_PIPELINE_NAME, WORKFLOW_BUCKET_NAME),
+        #             Message=message
+        #         )     
     except:
         workflowEndTime = datetime.datetime.now()
         message = 'Vortex ETL process failed.\n\tAll %d steps finished.\n\tStarted at: %s, ended at %s, total time:%s\n\tFailed at : %s' % (len(wfList), workflowStartTime, workflowEndTime, workflowEndTime-workflowStartTime, CURRENT_ACTION)
         message = "%s\n\t%s" % (message, ERROR_MESSAGE)
         LOGGER.error(message)
-        response = sns.publish(
-                    TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
-                    Subject="Processed Complete - Failed - %s, bucket=%s" % (DATA_PIPELINE_NAME, WORKFLOW_BUCKET_NAME),
-                    Message=message
-                )
+        # response = sns.publish(
+        #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
+        #             Subject="Processed Complete - Failed - %s, bucket=%s" % (DATA_PIPELINE_NAME, WORKFLOW_BUCKET_NAME),
+        #             Message=message
+        #         )
         raise
     
 
