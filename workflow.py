@@ -4,6 +4,7 @@ import json
 import yaml
 import time
 import subprocess
+import unicodedata
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext, SparkSession
 from pyspark.sql.functions import *
@@ -19,7 +20,7 @@ from pyspark.sql.functions import udf
 ## CONSTANTS
 
 APP_NAME = "Spark_Metadata_ETL"
-WORKFLOW_FOLDER = "c:\\temp\\hdfs\\config\\test_merge\\"
+WORKFLOW_FOLDER = "\\temp\\hdfs\\config\\test_merge\\"
 #WORKFLOW_FOLDER = "hdfs://thegreatlakes/spark/metadata_etl/config/test_merge/"
 FOLDER_NAME_DICT={}
 DATA_PIPELINE_NAME = ''
@@ -104,6 +105,7 @@ def loadWorkflow(folder, completeWorkFlow, wfList):
     joinTableFileName = folder + "joinTableConfig.csv"
     loadFileName = folder + "loadColumns.csv"
     lookupFilterFileName = folder + "lookupFilter.csv"
+    filterDataFileName = folder + "filterData.csv"
     selectTransformFileName = folder + "selectTransform.csv"    
     workflowSchema = StructType([
         StructField("stepNo", IntegerType(), False),
@@ -133,12 +135,19 @@ def loadWorkflow(folder, completeWorkFlow, wfList):
         StructField("baseColumn", StringType(), False),        
         StructField("joinColumn", StringType(), False),
         StructField("addColumn", StringType(), False),
+        StructField("addColumnAlias", StringType(), False),
         StructField("defaultValue", StringType(), False)]) 
     #### Lookup Filter schema
     lookupFilterSchema = StructType([
         StructField("stepNo", IntegerType(), False),
         StructField("trgtMetric", StringType(), False),
         StructField("srcColName", StringType(), True),        
+        StructField("dimFilter", StringType(), True),
+        StructField("includeExclude", StringType(), True),
+        StructField("matchingValue", StringType(), True)])       
+    #### Filter Data schema
+    filterDataSchema = StructType([
+        StructField("stepNo", IntegerType(), False),
         StructField("dimFilter", StringType(), True),
         StructField("includeExclude", StringType(), True),
         StructField("matchingValue", StringType(), True)])       
@@ -169,7 +178,7 @@ def loadWorkflow(folder, completeWorkFlow, wfList):
     #### joinTable Config
     joinTblDf = spark.read.csv(joinTableFileName, header=True, schema = joinTableSchema)
     joinTblDf.createOrReplaceTempView('joinTable')
-    completeWorkFlow['joinTable'] = spark.sql("SELECT stepNo, udfCleanup(srcData) as srcData, udfCleanup(baseColumn) AS baseColumn, udfCleanup(joinColumn) AS joinColumn, udfCleanup(addColumn) AS addColumn, udfCleanup(defaultValue) AS defaultValue FROM joinTable")
+    completeWorkFlow['joinTable'] = spark.sql("SELECT stepNo, udfCleanup(srcData) as srcData, udfCleanup(baseColumn) AS baseColumn, udfCleanup(joinColumn) AS joinColumn, udfCleanup(addColumn) AS addColumn, udfCleanup(addColumnAlias) AS addColumnAlias, udfCleanup(defaultValue) AS defaultValue FROM joinTable")
     completeWorkFlow['joinTable'].cache()
     completeWorkFlow['joinTable'].createOrReplaceTempView('joinTable')
     #### lookupFilter Config
@@ -178,6 +187,12 @@ def loadWorkflow(folder, completeWorkFlow, wfList):
     completeWorkFlow['lookupFilter'] = spark.sql("SELECT stepNo, udfCleanup(trgtMetric) as trgtMetric, udfCleanup(srcColName) AS srcColName, udfCleanup(dimFilter) AS dimFilter, udfCleanup(includeExclude) AS includeExclude, udfCleanup(matchingValue) AS matchingValue FROM lookupFilter")
     completeWorkFlow['lookupFilter'].cache()
     completeWorkFlow['lookupFilter'].createOrReplaceTempView('lookupFilter') 
+    #### filterData Config
+    filterDataDf = spark.read.csv(filterDataFileName, header=True, schema = filterDataSchema)
+    filterDataDf.createOrReplaceTempView('filterData')
+    completeWorkFlow['filterData'] = spark.sql("SELECT stepNo, udfCleanup(dimFilter) AS dimFilter, udfCleanup(includeExclude) AS includeExclude, udfCleanup(matchingValue) AS matchingValue FROM filterData")
+    completeWorkFlow['filterData'].cache()
+    completeWorkFlow['filterData'].createOrReplaceTempView('filterData') 
     #### selectTransform Config
     selectTransformDf = spark.read.csv(selectTransformFileName, header=True, schema = selectTransformSchema)
     selectTransformDf.createOrReplaceTempView('selectTransform')
@@ -206,7 +221,8 @@ def loadWorkflow(folder, completeWorkFlow, wfList):
         if row.tgtPath is None:
             d['tgtPath'] = row.tgtPath
         else:
-            d['tgtPath'] = changeRootFolderName(row.tgtPath, rootFolderName, FOLDER_NAME_DICT)
+            d['tgtPath'] = row.tgtPath
+            # d['tgtPath'] = changeRootFolderName(row.tgtPath, rootFolderName, FOLDER_NAME_DICT)
         d['outputFormat'] = row.outputFormat
         d['Saved'] = False
         wfList.append(d)
@@ -330,6 +346,16 @@ def loadQuotedFile(wfDict):
     spark.catalog.dropTempView(tempDataName)
     return True
 
+#---------------------------------------------------------------------------------------------------------
+def loadOrc(wfDict):
+    predefinedFields = loadDf.filter(loadDf.stepNo == wfDict['stepNo']).sort(loadDf.columnNo).collect()
+    path = wfDict["srcData"]
+    
+    df = spark.read.load(path, format='orc')
+    wfDict['tgtDF'] = df
+    
+    return True
+
 #-----------------------------------------------------------------------------
 
 def buildCalculatedMeasureDict(list):
@@ -370,13 +396,15 @@ def buildSQLColumnPlusMinusToken(columnName, colList):
 #-----------------------------------------------------------------------------
 
 def getColumnDataType(srcDF, columnName):
-    return srcDF.schema[str(columnName)].dataType
+    asciiColumnName = unicodedata.normalize('NFKD', columnName).encode('ascii','ignore')
+    return srcDF.schema[asciiColumnName].dataType
+
 #-----------------------------------------------------------------------------
 
 def joinTransform(wfDict, allDF):
     # get all the calculation parts for the step
     baseTable = wfDict['srcData']
-    calculatedMeasures = spark.sql("SELECT DISTINCT stepNo, srcData, baseColumn, joinColumn, addColumn, defaultValue FROM joinTable WHERE stepNo = %d ORDER BY srcData" % wfDict['stepNo']).collect()
+    calculatedMeasures = spark.sql("SELECT DISTINCT stepNo, srcData, baseColumn, joinColumn, addColumn, addColumnAlias, defaultValue FROM joinTable WHERE stepNo = %d ORDER BY srcData" % wfDict['stepNo']).collect()
     sqlCmd = ''
     allRequiredColumns = {}
     strAddedColumns = ""
@@ -384,7 +412,7 @@ def joinTransform(wfDict, allDF):
     for col in calculatedMeasures:
         if strAddedColumns != '':
             strAddedColumns += ', '
-        strAddedColumns += "COALESCE(%s.`%s`,'%s') AS `%s`" % (col.srcData, col.addColumn, col.defaultValue, col.addColumn)
+        strAddedColumns += "COALESCE(%s.`%s`,'%s') AS `%s`" % (col.srcData, col.addColumn, col.defaultValue, col.addColumnAlias)
         #first time reference a joined table
         if allRequiredColumns.has_key(col.srcData) == False:
             allRequiredColumns[col.srcData] = []
@@ -449,12 +477,16 @@ def processStep(wfList, allDF, startAtStepNum=0, endAtStepNum=-1):
             step['startTime'] = startTime
             if step['transFormType'] == 'Load':
                 result = loadQuotedFile(step)
+            elif step['transFormType'] == 'LoadOrc':
+                result = loadOrc(step)
             elif step['transFormType'] == 'Calculate':
                 result = calculationTransform(step)
             elif step['transFormType'] == 'Join':
                 result = joinTransform(step, allDF)
             elif step['transFormType'] == 'CheckKeyUnique':
                 result = checkKeyUnique(step, allDF)
+            elif step['transFormType'] == 'FilterData':
+                result = filterData(step, allDF)
             elif step['transFormType'] == 'LookupFilter':
                 result = lookupFilter(step, allDF)
             elif step['transFormType'] == 'MapLeft':
@@ -522,6 +554,7 @@ def processStep(wfList, allDF, startAtStepNum=0, endAtStepNum=-1):
         LOGGER.error(ERROR_MESSAGE)
         raise
     return True
+
 #-----------------------------------------------------------------------------
 
 def checkKeyUnique(wfDict, allDF):
@@ -808,12 +841,12 @@ def outputMergeTransform(wfDict, allDF):
     if allDF.has_key(baseTable) == False:
         ERROR_MESSAGE = "OutputMerge reference a non-existing srcData %s" % baseTable
         return False
-    print("Saving output to %s" % wfDict['tgtPath'])
+    print("Saving output to {0}".format(wfDict['tgtPath']))
     allDF[baseTable].coalesce(1).write.save(outputPath, format=wfDict['outputFormat'], header=True, mode='overwrite', sep='|',quote ='"')
     wfDict['Saved'] = True
-    if moveFile(outputPath) == False:
-        ERROR_MESSAGE = ('Failed to move the output file "%s"\n' % (outputPath)) + ERROR_MESSAGE
-        return False
+    # if moveFile(outputPath) == False:
+    #     ERROR_MESSAGE = ('Failed to move the output file "%s"\n' % (outputPath)) + ERROR_MESSAGE
+    #     return False
     return True
 
 #----------------------------------------------------------------------------
@@ -909,47 +942,141 @@ def moveFile(path):
         ls_cmd = ['hdfs', 'dfs', '-ls', path]
         cp_cmd = ['hdfs', 'dfs', '-cp', path]
         rm_cmd = ['hdfs', 'dfs', '-rm', '-R', '-skipTrash', path]
+        os = "linux"
     else:
-        win_path = path.replace('/', "\\")
-        ls_cmd = 'dir \"%s\"' % path
-        cp_cmd = 'copy "%s" "%d.csv"' % path, path
-        rm_cmd = 'rd /S /Q %s' %path
+        win_path = path.replace('/', '\\')
+        ls_cmd = 'dir "{0}"'.format(path)
+        cp_cmd = 'copy "{0}" "{1}.csv"'
+        rm_cmd = 'rd /S /Q "{0}"'.format(win_path)
+        ren_cmd = 'ren "{0}.csv" "{1}"'.format(win_path, path.split("/")[-1])
+        os = "win"
     while successFound == False and numberOfTries < 300:
         collection = run_cmd(ls_cmd)[0].splitlines()
         for object in collection:
             if (successFound == False):
-                for word in object.split(" "):
+                #   No RE so replacing sequences of spaces in simple manner
+                for word in object.replace("    ", " ").replace("   ", " ").replace("  ", " ").split(" "):
                     tokens = word.split("/")
                     
                     if tokens[-1] == '_SUCCESS':
                         successFound = True
                         break;
+            else:
+                break
         if successFound == False:
             LOGGER.warn("File not ready to move, wait 1 seconds")
             time.sleep(1)
             numberOfTries += 1
     fileCopied = False
-        collection = run_cmd(ls_cmd)[0].splitlines()
-        for object in collection:
-            for word in object.split(" "):
+    collection = run_cmd(ls_cmd)[0].splitlines()
+    for object in collection:
+        if (fileCopied == False):
+            #   No RE so replacing sequences of spaces in simple manner
+            for word in object.replace("    ", " ").replace("   ", " ").replace("  ", " ").split(" "):
                 tokens = word.split("/")
                 if fileCopied == False and tokens[-1].startswith('part-') and tokens[-1] != (prefix + '.csv'):
-                    print("Copying file from %s to %s" % (tokens[-1], prefix + '.csv'))
+                    print("Copying file from %s to %s" % (tokens[-1], prefix))
+                    if os == "win":
+                        cp_cmd = cp_cmd.format(win_path + '\\' + tokens[-1], win_path)
+                    else:
+                        cp_cmd = cp_cmd.format(path + '/' + tokens[-1], path)
                     run_cmd(cp_cmd)
-#                    s3.Object(rootFolderName, prefix + '.csv').copy_from(CopySource=rootFolderName + "/" + tokens[-1])
+    #                    s3.Object(rootFolderName, prefix + '.csv').copy_from(CopySource=rootFolderName + "/" + tokens[-1])
                     fileCopied = True        
                     break
+        else:
+            break
     if fileCopied == False:
         ERROR_MESSAGE = "There's no file(s) under %s to be copied." % prefix
         return False
     else:
         #delete the folder
         run_cmd(rm_cmd)
+        #rename the file copied
+        run_cmd(ren_cmd)
         # if prefix.endswith("/") == False:
         #     prefix += '/'
         # for obj in bucket.objects.filter(Prefix=prefix):
         #     s3.Object(bucket.name, obj.key).delete()
         return True
+
+def filterData(wfDict, wfList):
+    baseTable = wfDict['srcData']
+    srcDF = allDF[baseTable]
+    configList = spark.sql("SELECT DISTINCT trim(dimFilter) AS dimFilter, trim(includeExclude) AS includeExclude, trim(matchingValue) AS matchingValue FROM filterData WHERE stepNo =%d" % (wfDict['stepNo'])).collect()
+    #tgtMetrics is a dictionary containg filter dictionary, columnValuePair dictionary and srcMetricName
+    #filter dictory has includeExclude symbol as key and the value is a list of condition string sich as  "a=b", "c=d"
+    #columnValuePair is a dictionary of columnName and columnValue 
+    tgtMetrics = {}
+    requireColumns = []
+    otherColumns = []
+    filterDict = {}
+    #metricFilterDit looks like this:
+    #{ "=": {   srcColName1: ['srcColName1=a OR srcColName1=b'],
+    #           srcColName2: ['srcColName2=d OR srcColName2=f' OR srcColName2=g']}
+    #  "<>" {   srcColName3: ['srcColName3<>a AND srcColName3=k'],
+    #           srcColName4: ['srcColName4<>x AND srcColName4=y']
+    for row in configList:
+        # if there is no include/exclude expression, treat it as the dimension field
+        if row['includeExclude'] is None or row['includeExclude'] == '':
+            pass
+            #otherColumns.append(row['trgtMetric'])
+            #requireColumns.append(row['trgtMetric'])
+        else:
+            #if tgtMetrics.has_key(row['trgtMetric']) == False:
+                #columnExpr = '`%s` AS `%s` ' % (row['srcColName'], row['trgtMetric'])
+                #tgtMetrics[row['trgtMetric']] = {'filter':{}, 'srcMetric':row['srcColName']}
+            #metricFilterDict = tgtMetrics[row['trgtMetric']]['filter']
+            str = ''
+            if filterDict.has_key(row['includeExclude']) == False:
+                filterDict[row['includeExclude']] = {row['dimFilter']:''}
+            if filterDict[row['includeExclude']].has_key(row['dimFilter']) == False:
+                filterDict[row['includeExclude']][row['dimFilter']] = []
+            else:
+                str = filterDict[row['includeExclude']][row['dimFilter']]
+                #print("\nprevious results for :" +row['includeExclude'] + ":" + row['dimFilter'] + ":" + str)
+            if row['includeExclude'] == '=' and str != '':
+                str += ' OR '
+            elif str != '':
+                str += ' AND '
+            subStr = "`%s` %s %s" % (row['dimFilter'], row['includeExclude'], '' if row['matchingValue'] is None else row['matchingValue'])
+            # if row['includeExclude'] == '<>':
+            #     subStr = "(%s OR `%s` IS NULL)" % (subStr, row['dimFilter'])                
+            #if the data type is string, then add quotes to the compared value, otherwisse don't add quotes
+            #if getColumnDataType(srcDF, row['dimFilter']) == StringType():
+            #    subStr = "`%s` %s '%s'" % (row['dimFilter'], row['includeExclude'], row['matchingValue'])
+            #else:
+            #    subStr = "`%s` %s %s" % (row['dimFilter'], row['includeExclude'], row['matchingValue'])
+            #if row['includeExclude'] == '<>':
+            #    subStr = "(%s AND `%s` IS NOT NULL)" % (subStr, row['dimFilter'])
+            str += subStr
+            filterDict[row['includeExclude']][row['dimFilter']] = str
+            #print("updated results for :" +row['includeExclude'] + ":" + row['dimFilter'] + ":" + str)
+            #requireColumns.append(row['srcColName'])
+            requireColumns.append(row['dimFilter'])
+    
+    if checkFieldExists(allDF, baseTable, requireColumns) == False:
+        return False
+    
+    #now, build the filtering querystring
+    # metricFilters = {}
+    # newMetricsTokens = []
+    # for metric, metricDict in tgtMetrics.items():
+    #     filterDict = tgtMetrics[metric]['filter']
+    sqlFilterTokens = []
+    for includeExclude, dimFilterDict in filterDict.items():
+        # loop through all the dimFilters and build a subFilterStr
+        for colName, subStr in dimFilterDict.items():
+            sqlFilterTokens.append('(' + subStr + ')')
+        sqlFilterStr = ' AND '.join(sqlFilterTokens)
+        #newMetricsTokens.append('\nSUM(CASE WHEN %s THEN `%s` ELSE 0 END) AS `%s`' % (sqlFilterStr, metricDict['srcMetric'], metric))
+    # otherColumnsSql = buildColumnSql(otherColumns)
+    # newMetricsSQL = ', '.join(newMetricsTokens)
+    # sqlCmd = 'SELECT %s, %s FROM %s GROUP BY %s' % (otherColumnsSql, newMetricsSQL, baseTable, otherColumnsSql)
+    
+    sqlCmd = 'SELECT * FROM %s WHERE %s' % (baseTable, sqlFilterStr)
+    print(sqlCmd)
+    wfDict['tgtDF']  = execSQL(sqlCmd)
 
 #----------------------------------------------------------------------------
 def logProcessDetails(wfDict, wfList):
@@ -1004,17 +1131,17 @@ def deleteFolder(subFolderName):
         if (WORKFLOW_FOLDER.split("/")[0] == "hdfs"):
             run_cmd(['hdfs', 'dfs', '-rm', '-R', '-skipTrash', prefix])
         else:
-            run_cmd(['rd', '/S', '/Q', deleteFolder])
+            run_cmd('rd /S /Q "{0}"'.format(deleteFolder.replace('/', '\\')))
     except:
         pass
-    
+
 #----------------------------------------------------------------------------
 ## Main functionality
 if __name__ == "__main__":
     statusCode = "failed"
     CURRENT_ACTION = "loadWorkflow"
     ERROR_MESSAGE = ''
-    
+
     workflowStartTime = datetime.datetime.now()
     if len(sys.argv) > 1:
         WORKFLOW_FOLDER = sys.argv[1]
@@ -1049,45 +1176,47 @@ if __name__ == "__main__":
     allDF = {}
     completeWorkFlow = {}
     wfList = []
-    try:
-        loadWorkflow(WORKFLOW_FOLDER, completeWorkFlow, wfList)
-        #clean up noMatch folder from the previous run
-        deleteFolder(NO_MATCH)
-        workflowDf = completeWorkFlow['master']
-        loadDf = completeWorkFlow['load']
-        calcDf = completeWorkFlow['calculation']
-        joinDf = completeWorkFlow['joinTable']
-        lookupFilterDf = completeWorkFlow['lookupFilter']
-        selectTransformDf = completeWorkFlow['selectTransform']
-        CURRENT_ACTION = "processStep"
-        status = processStep(wfList, allDF)
-        workflowEndTime = datetime.datetime.now()    
-        message = 'Started at: %s, ended at %s, total time:%s\n\tData pipeline is: %s' % (workflowStartTime, workflowEndTime, workflowEndTime-workflowStartTime, WORKFLOW_FOLDER)
+try:
+    loadWorkflow(WORKFLOW_FOLDER, completeWorkFlow, wfList)
+    #clean up noMatch folder from the previous run
+    #deleteFolder(NO_MATCH)
+    workflowDf = completeWorkFlow['master']
+    loadDf = completeWorkFlow['load']
+    calcDf = completeWorkFlow['calculation']
+    joinDf = completeWorkFlow['joinTable']
+    lookupFilterDf = completeWorkFlow['lookupFilter']
+    filterDataDf = completeWorkFlow['filterData']
+    selectTransformDf = completeWorkFlow['selectTransform']
+    CURRENT_ACTION = "processStep"
+    status = processStep(wfList, allDF)
+    workflowEndTime = datetime.datetime.now()    
+    message = 'Started at: %s, ended at %s, total time:%s\n\tData pipeline is: %s' % (workflowStartTime, workflowEndTime, workflowEndTime-workflowStartTime, WORKFLOW_FOLDER)
 
-        if status == True:
-            statusCode = "succeeded"
-            message = 'Vortex ETL process %s.\n\t%s\n\tAll %d steps finished.' % (statusCode, message, len(wfList))
-        else:
-            statusCode = "failed"
-            message = 'Vortex ETL process %s.\n\tFailed at: %s\n\t%s\n\t%s' % (statusCode, CURRENT_ACTION, message, ERROR_MESSAGE)
-            LOGGER.error(message)
-
-        # response = sns.publish(
-        #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_ROOT_FOLDER_NAME,
-        #             Subject="Processed Complete - %s - %s, bucket=%s" % (statusCode, DATA_PIPELINE_NAME, WORKFLOW_ROOT_FOLDER_NAME),
-        #             Message=message
-        #         )     
-    except:
-        workflowEndTime = datetime.datetime.now()
-        message = 'Vortex ETL process failed.\n\tAll %d steps finished.\n\tStarted at: %s, ended at %s, total time:%s\n\tFailed at : %s' % (len(wfList), workflowStartTime, workflowEndTime, workflowEndTime-workflowStartTime, CURRENT_ACTION)
-        message = "%s\n\t%s" % (message, ERROR_MESSAGE)
+    if status == True:
+        statusCode = "succeeded"
+        message = 'Vortex ETL process %s.\n\t%s\n\tAll %d steps finished.' % (statusCode, message, len(wfList))
+    else:
+        statusCode = "failed"
+        message = 'Vortex ETL process %s.\n\tFailed at: %s\n\t%s\n\t%s' % (statusCode, CURRENT_ACTION, message, ERROR_MESSAGE)
         LOGGER.error(message)
-        # response = sns.publish(
-        #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_ROOT_FOLDER_NAME,
-        #             Subject="Processed Complete - Failed - %s, bucket=%s" % (DATA_PIPELINE_NAME, WORKFLOW_ROOT_FOLDER_NAME),
-        #             Message=message
-        #         )
-        raise
+
+    # response = sns.publish(
+    #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_ROOT_FOLDER_NAME,
+    #             Subject="Processed Complete - %s - %s, bucket=%s" % (statusCode, DATA_PIPELINE_NAME, WORKFLOW_ROOT_FOLDER_NAME),
+    #             Message=message
+    #         )     
+
+except:
+    workflowEndTime = datetime.datetime.now()
+    message = 'Vortex ETL process failed.\n\tAll %d steps finished.\n\tStarted at: %s, ended at %s, total time:%s\n\tFailed at : %s' % (len(wfList), workflowStartTime, workflowEndTime, workflowEndTime-workflowStartTime, CURRENT_ACTION)
+    message = "%s\n\t%s" % (message, ERROR_MESSAGE)
+    LOGGER.error(message)
+    # response = sns.publish(
+    #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_ROOT_FOLDER_NAME,
+    #             Subject="Processed Complete - Failed - %s, bucket=%s" % (DATA_PIPELINE_NAME, WORKFLOW_ROOT_FOLDER_NAME),
+    #             Message=message
+    #         )
+    raise
     
 
 
