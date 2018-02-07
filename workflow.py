@@ -3,6 +3,7 @@ import pyspark
 import json
 import yaml
 import time
+import subprocess
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext, SparkSession
 from pyspark.sql.functions import *
@@ -18,11 +19,11 @@ from pyspark.sql.functions import udf
 ## CONSTANTS
 
 APP_NAME = "Spark_Metadata_ETL"
-WORKFLOW_FOLDER = "c:\\temp\\hdfs\\"
+WORKFLOW_FOLDER = "c:\\temp\\hdfs\\config\\test_merge\\"
 #WORKFLOW_FOLDER = "hdfs://thegreatlakes/spark/metadata_etl/config/test_merge/"
-BUCKET_NAME_DICT={}
+FOLDER_NAME_DICT={}
 DATA_PIPELINE_NAME = ''
-WORKFLOW_BUCKET_NAME = ''
+WORKFLOW_ROOT_FOLDER_NAME = ''
 global CURRENT_ACTION
 global ERROR_MESSAGE
 # SNS_ARN_PREFIX="arn:aws:sns:us-west-2:088921935615:Vortex-"
@@ -30,6 +31,18 @@ NO_MATCH = "noMatch"
 
 ##OTHER FUNCTIONS/CLASSES
 
+#-----------------------------------------------------------------------------
+def run_cmd(args_list):
+    print('Running system command: {0}'.format(' '.join(args_list)))
+    proc = subprocess.Popen(args_list, shell=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+    (output, errors) = proc.communicate()
+    if proc.returncode:
+        raise RuntimeError(
+            'Error running command: %s. Return code: %d, Error: %s' % (
+                ' '.join(args_list), proc.returncode, errors))
+    return (output, errors)
+ 
 #-----------------------------------------------------------------------------
 def execSQL(sqlCmd):
     msg = "Executing SQL: " + sqlCmd
@@ -57,36 +70,35 @@ def convertDouble(text2):
             return 0.0
     return 0.0
 
-# #-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+def getRootFolderFromWorkflowPath(workflowPath):
+    tokens =  workflowPath.split("/")
+    if len(tokens) <= 3:
+        LOGGER.error("Path %s is not valid " % workflowPath)
+        return None, None
+    else:
+        rootFolderName = tokens[2]
+        prefix =  "/".join(tokens[3:])
+        return rootFolderName, prefix
 
-# def getBucketFromS3Key(s3Key):
-#     tokens =  s3Key.split("/")
-#     if tokens[0] != 's3' and len(tokens) <= 3:
-#         LOGGER.error("Path %s is not a valid s3 path" % s3Key)
-#         return None, None
-#     else:
-#         bucketName = tokens[2]
-#         prefix =  "/".join(tokens[3:])
-#         return bucketName, prefix
-# #-----------------------------------------------------------------------------
-
-# def changeBucketName(s3Key, bucketName, BUCKET_NAME_DICT):
-#     tokens =  s3Key.split("/")
-#     if tokens[0] != 's3:' and len(tokens) <= 3:
-#         LOGGER.error("Path %s is not a valid s3 path" % s3Key)
-#         return None
-#     if BUCKET_NAME_DICT.has_key(tokens[2]):
-#         tokens[2] = BUCKET_NAME_DICT[tokens[2]]
-#     else:
-#         #change the bucket name to the default bucket name
-#         tokens[2] = bucketName
-#     newS3Key =  "/".join(tokens)
-#     return newS3Key
+#-----------------------------------------------------------------------------
+def changeRootFolderName(folder, rootFolderName, FOLDER_NAME_DICT):
+    tokens =  folder.replace("\\\\", '\\').replace('\\', '/').split("/")
+    # if tokens[0] != 's3:' and len(tokens) <= 3:
+    #     LOGGER.error("Path %s is not a valid s3 path" % s3Key)
+    #     return None
+    if FOLDER_NAME_DICT.has_key(tokens[2]):
+        tokens[2] = FOLDER_NAME_DICT[tokens[2]]
+    else:
+        #change the bucket name to the default bucket name
+        tokens[2] = rootFolderName
+    res =  "/".join(tokens)
+    return res
 
 #-----------------------------------------------------------------------------
 def loadWorkflow(folder, completeWorkFlow, wfList):
     #find the bucket location from folder
-    # bucketName, prefix = getBucketFromS3Key(folder)
+    rootFolderName, prefix = getRootFolderFromWorkflowPath(folder)
     workflowFileName = folder + "masterConfig.csv"
     calculationFileName = folder + "calculations.csv"
     joinTableFileName = folder + "joinTableConfig.csv"
@@ -179,13 +191,13 @@ def loadWorkflow(folder, completeWorkFlow, wfList):
         d['stepName'] = row.stepName
         d['transFormType'] = row.type
         if d['transFormType'] == 'Load':
-            d['srcData'] = changeBucketName(row.srcData, bucketName, BUCKET_NAME_DICT)
+            d['srcData'] = changeRootFolderName(row.srcData, rootFolderName, FOLDER_NAME_DICT)
         else:
             d['srcData'] = row.srcData
         if d['transFormType'] == 'MapLeft' or d['transFormType'] == 'MapLeftSilent' or d['transFormType'] == 'MapInner':        
-            d['metaData'] = changeBucketName(row.metaData, bucketName, BUCKET_NAME_DICT)
+            d['metaData'] = changeRootFolderName(row.metaData, rootFolderName, FOLDER_NAME_DICT)
         elif  d['transFormType'] == 'CompareValues':
-            d['metaData'] = changeBucketName(row.metaData, bucketName, BUCKET_NAME_DICT)
+            d['metaData'] = changeRootFolderName(row.metaData, rootFolderName, FOLDER_NAME_DICT)
             if d['metaData'] is None:
                 d['metaData'] = row.metaData
         else:    
@@ -194,7 +206,7 @@ def loadWorkflow(folder, completeWorkFlow, wfList):
         if row.tgtPath is None:
             d['tgtPath'] = row.tgtPath
         else:
-            d['tgtPath'] = changeBucketName(row.tgtPath, bucketName, BUCKET_NAME_DICT)
+            d['tgtPath'] = changeRootFolderName(row.tgtPath, rootFolderName, FOLDER_NAME_DICT)
         d['outputFormat'] = row.outputFormat
         d['Saved'] = False
         wfList.append(d)
@@ -720,7 +732,7 @@ def mappingColumns(wfDict, allDF, joinType, silent):
             #s = "%s" % df.show()
             # noMatchFileURL = nomatchfile.replace('s3://', 'https://console.aws.amazon.com/s3/buckets/').replace(' ', '%20')
             # response = sns.publish(
-            #     TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
+            #     TargetArn=SNS_ARN_PREFIX + WORKFLOW_ROOT_FOLDER_NAME,
             #     Subject="Non-matching record found in ETL step: %s" % (wfDict['stepName']),
             #     Message="Non-matching record found when joining with mapping table during step %s.\n\tmasterConfig location: %s\n\tMapping table location is: %s\n\tPlease check: %s for details.\nNo match:\n\t%s" % (wfDict['stepName'], WORKFLOW_FOLDER, configFilePath, noMatchFileURL, s)
             # )
@@ -883,43 +895,60 @@ def compareValues(wfDict, allDF):
 # ???
 def moveFile(path):
     global ERROR_MESSAGE
-    # bucketName, prefix = getBucketFromS3Key(path)
-    # if bucketName is None:
+    rootFolderName, prefix = getRootFolderFromWorkflowPath(path)
+    # if rootFolderName is None:
     #     ERROR_MESSAGE = "Cannot get s3 bucket name from %s" % path
     #     return False
-    # bucket = s3.Bucket(bucketName)
+    # bucket = s3.Bucket(rootFolderName)
     #
     successFound = False
     numberOfTries = 0
     #test to see if the _SUCCESS file exists in the folder.  If not, wait for 30 seconds and test again.
     #this is because the saving of the folder files may be performed by other nodes than the current one
+    if path.split('/')[0] == "hdfs":
+        ls_cmd = ['hdfs', 'dfs', '-ls', path]
+        cp_cmd = ['hdfs', 'dfs', '-cp', path]
+        rm_cmd = ['hdfs', 'dfs', '-rm', '-R', '-skipTrash', path]
+    else:
+        win_path = path.replace('/', "\\")
+        ls_cmd = 'dir \"%s\"' % path
+        cp_cmd = 'copy "%s" "%d.csv"' % path, path
+        rm_cmd = 'rd /S /Q %s' %path
     while successFound == False and numberOfTries < 300:
-        for object in bucket.objects.filter(Prefix=prefix):
-            tokens = object.key.split("/")
-            if tokens[-1] == '_SUCCESS':
-                successFound = True
-                break;
+        collection = run_cmd(ls_cmd)[0].splitlines()
+        for object in collection:
+            if (successFound == False):
+                for word in object.split(" "):
+                    tokens = word.split("/")
+                    
+                    if tokens[-1] == '_SUCCESS':
+                        successFound = True
+                        break;
         if successFound == False:
             LOGGER.warn("File not ready to move, wait 1 seconds")
             time.sleep(1)
             numberOfTries += 1
     fileCopied = False
-    for object in bucket.objects.filter(Prefix=prefix):
-        tokens = object.key.split("/")
-        if fileCopied == False and tokens[-1].startswith('part-') and object.key != (prefix + '.csv'):
-            print("Copying file from %s to %s" % (object.key, prefix + '.csv'))
-            s3.Object(bucketName, prefix + '.csv').copy_from(CopySource=bucketName + "/" + object.key)
-            fileCopied = True        
-            break
+        collection = run_cmd(ls_cmd)[0].splitlines()
+        for object in collection:
+            for word in object.split(" "):
+                tokens = word.split("/")
+                if fileCopied == False and tokens[-1].startswith('part-') and tokens[-1] != (prefix + '.csv'):
+                    print("Copying file from %s to %s" % (tokens[-1], prefix + '.csv'))
+                    run_cmd(cp_cmd)
+#                    s3.Object(rootFolderName, prefix + '.csv').copy_from(CopySource=rootFolderName + "/" + tokens[-1])
+                    fileCopied = True        
+                    break
     if fileCopied == False:
         ERROR_MESSAGE = "There's no file(s) under %s to be copied." % prefix
         return False
     else:
         #delete the folder
-        if prefix.endswith("/") == False:
-            prefix += '/'
-        for obj in bucket.objects.filter(Prefix=prefix):
-            s3.Object(bucket.name, obj.key).delete()
+        run_cmd(rm_cmd)
+        # if prefix.endswith("/") == False:
+        #     prefix += '/'
+        # for obj in bucket.objects.filter(Prefix=prefix):
+        #     s3.Object(bucket.name, obj.key).delete()
         return True
 
 #----------------------------------------------------------------------------
@@ -942,7 +971,7 @@ def logProcessDetails(wfDict, wfList):
             log['duration'] = int(step['duration'].total_seconds() * 1000) #milliseconds
             log['tgt_data'] = step['tgtData'] 
             log['row_count'] = step['tgtDF'].count()
-            log['bucket'] = WORKFLOW_BUCKET_NAME
+            log['root_folder'] = WORKFLOW_ROOT_FOLDER_NAME
             log['src_data'] = step['srcData']
             log['meta_data'] = step['metaData']
     #rdd = sc.parallelize(stats)
@@ -970,13 +999,14 @@ def logProcessDetails(wfDict, wfList):
 #-------------------------------
 def deleteFolder(subFolderName):
     deleteFolder = WORKFLOW_FOLDER + subFolderName
-    bucketName, prefix = getBucketFromS3Key(deleteFolder)
-    bucket = s3.Bucket(bucketName)
-    for obj in bucket.objects.filter(Prefix=prefix):
-        try:
-            s3.Object(bucketName, obj.key).delete()
-        except:
-            print("Cannot delete %s" % obj.key)
+    rootFolderName, prefix = getRootFolderFromWorkflowPath(deleteFolder)
+    try:
+        if (WORKFLOW_FOLDER.split("/")[0] == "hdfs"):
+            run_cmd(['hdfs', 'dfs', '-rm', '-R', '-skipTrash', prefix])
+        else:
+            run_cmd(['rd', '/S', '/Q', deleteFolder])
+    except:
+        pass
     
 #----------------------------------------------------------------------------
 ## Main functionality
@@ -989,19 +1019,20 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         WORKFLOW_FOLDER = sys.argv[1]
     if len(sys.argv) > 2:
-        #the seccond argument is the bucket name list
+        #the seccond argument is the folder name list
         s = sys.argv[2]
         s = s.replace(' ', '').replace(':', ': ')
-        BUCKET_NAME_DICT = yaml.load('{' + s + '}')
+        FOLDER_NAME_DICT = yaml.load('{' + s + '}')
     #parsing workflow folder name to get the data pipeline name
+    WORKFLOW_FOLDER =  WORKFLOW_FOLDER.replace('\\', '/').replace("//", '/')
     tokens =  WORKFLOW_FOLDER.split("/")
     if tokens[-1] == '':
-        WORKFLOW_BUCKET_NAME = tokens[2]
+        WORKFLOW_ROOT_FOLDER_NAME = tokens[2]
         DATA_PIPELINE_NAME = tokens[-2]
     else:
-        WORKFLOW_BUCKET_NAME = tokens[2]    
+        WORKFLOW_ROOT_FOLDER_NAME = tokens[2]    
         DATA_PIPELINE_NAME = tokens[-1]  
-    print("Workflow folder: %s\nBucketname replacement: %s" % (WORKFLOW_FOLDER, BUCKET_NAME_DICT ))
+    print("Workflow folder: %s\nrootFolderName replacement: %s" % (WORKFLOW_FOLDER, FOLDER_NAME_DICT ))
     spark = SparkSession \
         .builder \
         .appName(APP_NAME) \
@@ -1042,8 +1073,8 @@ if __name__ == "__main__":
             LOGGER.error(message)
 
         # response = sns.publish(
-        #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
-        #             Subject="Processed Complete - %s - %s, bucket=%s" % (statusCode, DATA_PIPELINE_NAME, WORKFLOW_BUCKET_NAME),
+        #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_ROOT_FOLDER_NAME,
+        #             Subject="Processed Complete - %s - %s, bucket=%s" % (statusCode, DATA_PIPELINE_NAME, WORKFLOW_ROOT_FOLDER_NAME),
         #             Message=message
         #         )     
     except:
@@ -1052,8 +1083,8 @@ if __name__ == "__main__":
         message = "%s\n\t%s" % (message, ERROR_MESSAGE)
         LOGGER.error(message)
         # response = sns.publish(
-        #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_BUCKET_NAME,
-        #             Subject="Processed Complete - Failed - %s, bucket=%s" % (DATA_PIPELINE_NAME, WORKFLOW_BUCKET_NAME),
+        #             TargetArn=SNS_ARN_PREFIX + WORKFLOW_ROOT_FOLDER_NAME,
+        #             Subject="Processed Complete - Failed - %s, bucket=%s" % (DATA_PIPELINE_NAME, WORKFLOW_ROOT_FOLDER_NAME),
         #             Message=message
         #         )
         raise
