@@ -43,7 +43,7 @@ def run_cmd(args_list):
             'Error running command: %s. Return code: %d, Error: %s' % (
                 ' '.join(args_list), proc.returncode, errors))
     return (output, errors)
- 
+
 #-----------------------------------------------------------------------------
 def execSQL(sqlCmd):
     msg = "Executing SQL: " + sqlCmd
@@ -483,18 +483,18 @@ def processStep(wfList, allDF, startAtStepNum=0, endAtStepNum=-1):
                 result = calculationTransform(step)
             elif step['transFormType'] == 'Join':
                 result = joinTransform(step, allDF)
-            elif step['transFormType'] == 'CheckKeyUnique':
-                result = checkKeyUnique(step, allDF)
+            # elif step['transFormType'] == 'CheckKeyUnique':
+            #     result = checkKeyUnique(step, allDF)
             elif step['transFormType'] == 'FilterData':
                 result = filterData(step, allDF)
-            elif step['transFormType'] == 'LookupFilter':
-                result = lookupFilter(step, allDF)
-            elif step['transFormType'] == 'MapLeft':
-                result = mappingColumns(step, allDF, 'LEFT', False)
-            elif step['transFormType'] == 'MapLeftSilent':
-                result = mappingColumns(step, allDF, 'LEFT', True)
-            elif step['transFormType'] == 'MapInner':
-                result = mappingColumns(step, allDF, 'INNER', True)
+            # elif step['transFormType'] == 'LookupFilter':
+            #     result = lookupFilter(step, allDF)
+            # elif step['transFormType'] == 'MapLeft':
+            #     result = mappingColumns(step, allDF, 'LEFT', False)
+            # elif step['transFormType'] == 'MapLeftSilent':
+            #     result = mappingColumns(step, allDF, 'LEFT', True)
+            # elif step['transFormType'] == 'MapInner':
+            #     result = mappingColumns(step, allDF, 'INNER', True)
             elif step['transFormType'] == 'SelectTransform':
                 result = selectTransform(step, allDF)
             elif step['transFormType'] == 'CompareValues':
@@ -505,6 +505,8 @@ def processStep(wfList, allDF, startAtStepNum=0, endAtStepNum=-1):
                 result = outputMergeTransform(step, allDF)     
             elif step['transFormType'] == 'OutputParquet':
                 result = outputParquetTransform(step, allDF)
+            elif step['transFormType'] == 'OutputHive':
+                result = outputHiveTransform(step, allDF)
             elif step['transFormType'] == 'LogProcessDetails':
                 result = logProcessDetails(step, wfList)
             else:
@@ -866,6 +868,26 @@ def outputParquetTransform(wfDict, allDF):
         newNames.append(n.lower())
     df2 = reduce(lambda df, idx: df.withColumnRenamed(df.schema.names[idx], newNames[idx]), xrange(len(newNames)), df)
     df2.write.parquet(wfDict['tgtPath'], mode='overwrite')
+    wfDict['Saved'] = True
+    return True
+
+#----------------------------------------------------------------------------
+def outputHiveTransform(wfDict, allDF):
+    global ERROR_MESSAGE
+    baseTable = wfDict['srcData']
+    if baseTable is None or baseTable == "":
+        ERROR_MESSAGE = "OutputHive transform requires a srcData, none was provided for %s" % wfDict['stepName']
+        return False
+    if allDF.has_key(baseTable) == False:
+        ERROR_MESSAGE =  "OutputHive reference a non-existing srcData %s" % baseTable
+        return False
+    print("Creating output table %s" % wfDict['tgtPath'])
+    newNames = []
+    df = allDF[baseTable]
+    for n in df.schema:
+        newNames.append(n.lower())
+
+    outputSql = "CREATE TABLE %s" % wfDict['tgtPath']
     wfDict['Saved'] = True
     return True
 

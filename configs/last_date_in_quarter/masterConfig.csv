@@ -1,0 +1,3 @@
+stepNo,stepName,type,srcData,metaData,tgtData,tgtPath,outputFormat,disabled
+1,Load factflat,LoadOrc,hdfs://devdatalake/data/extract/factflat,,factflat,,,
+2,Calculate Year_Quarter and MAX date,Calculate,factflat,,max_date_per_quarter,hdfs://devdatalake/data/extract/max_date_per_quarter,parquet,

@@ -1,0 +1,7 @@
+stepNo,stepName,type,srcData,metaData,tgtData,tgtPath,outputFormat,disabled
+1,Load account File,LoadOrc,hdfs://devdatalake/data/ppa/union/ACCOUNT,,account,hdfs://devdatalake/user/spark/account,parquet,
+2,Load benchmark files,LoadOrc,hdfs://devdatalake/data/ppa/union/BENCHMARK,,benchmark,hdfs://devdatalake/user/spark/benchmark,parquet,
+3,Filter account File,FilterData,accountx,,filtered_account,,,
+4,Filter benchmark files,FilterData,benchmark,,filtered_benchmark,,,
+5,Join account to benchmark 1,Join,filtered_account,,join_1,,,
+6,Join account to benchmark 2,Join,join_1,,join_2,hdfs://devdatalake/user/spark/output,parquet,

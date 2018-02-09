@@ -1,0 +1,4 @@
+stepNo,dimFilter,includeExclude,value
+3,close_date,IS NOT NULL,
+3,inception_date,<=,CURRENT_DATE()
+4,short_name,!=,'ISAM'

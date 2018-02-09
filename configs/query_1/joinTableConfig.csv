@@ -1,0 +1,5 @@
+stepNo,srcData,baseColumn,joinColumn,addColumn,addColumnAlias,defaultValue
+5,filtered_benchmark,benchmark_tkn_id,benchmark_tkn_id,short_name,b_short_name,
+5,filtered_benchmark,benchmark_tkn_id,benchmark_tkn_id,long_name,b_long_name,
+6,filtered_benchmark,aggregate_benchmark_tkn_id,benchmark_tkn_id,short_name,rb_short_name,
+6,filtered_benchmark,aggregate_benchmark_tkn_id,benchmark_tkn_id,long_name,rb_long_name,
