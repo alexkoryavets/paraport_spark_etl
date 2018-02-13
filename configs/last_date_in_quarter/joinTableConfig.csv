@@ -1,1 +1,1 @@
-stepNo,srcData,baseColumn,joinColumn,addColumn,addColumnAlias,defaultValue
+stepNo|srcData|baseColumn|joinColumn|addColumn|addColumnAlias|defaultValue

@@ -100,6 +100,8 @@ def changeRootFolderName(folder, rootFolderName, FOLDER_NAME_DICT):
 def loadWorkflow(folder, completeWorkFlow, wfList):
     #find the bucket location from folder
     rootFolderName, prefix = getRootFolderFromWorkflowPath(folder)
+    if (folder[-1] != "/"):
+        folder = folder + "/"
     workflowFileName = folder + "masterConfig.csv"
     calculationFileName = folder + "calculations.csv"
     joinTableFileName = folder + "joinTableConfig.csv"
@@ -160,41 +162,41 @@ def loadWorkflow(folder, completeWorkFlow, wfList):
         StructField("aggregation", StringType(), True)])
     spark.udf.register('udfCleanup', lambda x: x.strip() if not (x is None) else None)
     
-    workflowDf = spark.read.csv(workflowFileName, header=True, schema = workflowSchema)
+    workflowDf = spark.read.csv(workflowFileName, sep='|', header=True, schema = workflowSchema)
     workflowDf.createOrReplaceTempView('master')
     completeWorkFlow['master'] = spark.sql("SELECT stepNo, udfCleanup(stepName) as stepName, udfCleanup(type) AS type, udfCleanup(srcData) AS srcData, udfCleanup(metaData) AS metaData, udfCleanup(tgtData) AS tgtData, udfCleanup(tgtPath) AS tgtPath, udfCleanup(outputFormat) AS outputFormat FROM master WHERE disabled is NULL or udfCleanup(disabled)='' ORDER by stepNo")    
     #### loadConfig
-    loadDf = spark.read.csv(loadFileName, header=True, schema = loadColSchema)
+    loadDf = spark.read.csv(loadFileName, sep='|', header=True, schema = loadColSchema)
     loadDf.createOrReplaceTempView('loadCols')   
     completeWorkFlow['load'] = spark.sql("SELECT stepNo, columnNo, udfCleanup(columnName) AS columnName, udfCleanup(dataType) as dataType FROM loadCols")
     completeWorkFlow['load'].cache()
     completeWorkFlow['load'].createOrReplaceTempView('loadCols')
     #### calculation Config
-    calcDf = spark.read.csv(calculationFileName, header=True, schema = calculationSchema)
+    calcDf = spark.read.csv(calculationFileName, sep='|', header=True, schema = calculationSchema)
     calcDf.createOrReplaceTempView('calcCols')
     completeWorkFlow['calculation'] = spark.sql("SELECT stepNo, calcNo, udfCleanup(columnName) AS columnName, udfCleanup(srcColumn) AS srcColumn, udfCleanup(plusMinus) AS plusMinus FROM calcCols")
     completeWorkFlow['calculation'].cache()
     completeWorkFlow['calculation'].createOrReplaceTempView('calcCols')
     #### joinTable Config
-    joinTblDf = spark.read.csv(joinTableFileName, header=True, schema = joinTableSchema)
+    joinTblDf = spark.read.csv(joinTableFileName, sep='|', header=True, schema = joinTableSchema)
     joinTblDf.createOrReplaceTempView('joinTable')
     completeWorkFlow['joinTable'] = spark.sql("SELECT stepNo, udfCleanup(srcData) as srcData, udfCleanup(baseColumn) AS baseColumn, udfCleanup(joinColumn) AS joinColumn, udfCleanup(addColumn) AS addColumn, udfCleanup(addColumnAlias) AS addColumnAlias, udfCleanup(defaultValue) AS defaultValue FROM joinTable")
     completeWorkFlow['joinTable'].cache()
     completeWorkFlow['joinTable'].createOrReplaceTempView('joinTable')
     #### lookupFilter Config
-    lookupfilterDf = spark.read.csv(lookupFilterFileName, header=True, schema = lookupFilterSchema)
+    lookupfilterDf = spark.read.csv(lookupFilterFileName, sep='|', header=True, schema = lookupFilterSchema)
     lookupfilterDf.createOrReplaceTempView('lookupFilter')
     completeWorkFlow['lookupFilter'] = spark.sql("SELECT stepNo, udfCleanup(trgtMetric) as trgtMetric, udfCleanup(srcColName) AS srcColName, udfCleanup(dimFilter) AS dimFilter, udfCleanup(includeExclude) AS includeExclude, udfCleanup(matchingValue) AS matchingValue FROM lookupFilter")
     completeWorkFlow['lookupFilter'].cache()
     completeWorkFlow['lookupFilter'].createOrReplaceTempView('lookupFilter') 
     #### filterData Config
-    filterDataDf = spark.read.csv(filterDataFileName, header=True, schema = filterDataSchema)
+    filterDataDf = spark.read.csv(filterDataFileName, sep='|', header=True, schema = filterDataSchema)
     filterDataDf.createOrReplaceTempView('filterData')
     completeWorkFlow['filterData'] = spark.sql("SELECT stepNo, udfCleanup(dimFilter) AS dimFilter, udfCleanup(includeExclude) AS includeExclude, udfCleanup(matchingValue) AS matchingValue FROM filterData")
     completeWorkFlow['filterData'].cache()
     completeWorkFlow['filterData'].createOrReplaceTempView('filterData') 
     #### selectTransform Config
-    selectTransformDf = spark.read.csv(selectTransformFileName, header=True, schema = selectTransformSchema)
+    selectTransformDf = spark.read.csv(selectTransformFileName, sep='|', header=True, schema = selectTransformSchema)
     selectTransformDf.createOrReplaceTempView('selectTransform')
     completeWorkFlow['selectTransform'] = spark.sql("SELECT stepNo, columnNo, udfCleanup(tgtColumn) as tgtColumn, udfCleanup(exp) as exp, udfCleanup(aggregation) AS aggregation FROM selectTransform")
     completeWorkFlow['selectTransform'].cache()
@@ -348,7 +350,6 @@ def loadQuotedFile(wfDict):
 
 #---------------------------------------------------------------------------------------------------------
 def loadOrc(wfDict):
-    predefinedFields = loadDf.filter(loadDf.stepNo == wfDict['stepNo']).sort(loadDf.columnNo).collect()
     path = wfDict["srcData"]
     
     df = spark.read.load(path, format='orc')
@@ -716,7 +717,7 @@ def mappingColumns(wfDict, allDF, joinType, silent):
     baseTable = wfDict["srcData"]
     configFilePath =  wfDict["metaData"]
     #    load the file
-    configDf = spark.read.csv(configFilePath, header=True)
+    configDf = spark.read.csv(configFilePath, sep='|', header=True)
     configDf.createOrReplaceTempView('configTable')
     sourceColumns = allDF[baseTable].columns
     #get config columns
@@ -823,10 +824,10 @@ def outputQueryTransform(wfDict, allDF):
     df = execSQL(sqlCmd)
     if wfDict['tgtData'] is not None:
         wfDict['tgtDF'] = df
-    if outputPath != None and outputPath != "":
-        print("Saving output to %s" % outputPath)
-        df.coalesce(1).write.save(outputPath, format=wfDict['outputFormat'], header=True, mode='overwrite', sep='|',quote ='"')
-        wfDict['Saved'] = True
+    # if outputPath != None and outputPath != "":
+    #     print("Saving output to %s" % outputPath)
+    #     df.coalesce(1).write.save(outputPath, format=wfDict['outputFormat'], header=True, mode='overwrite', sep='|',quote ='"')
+    #     wfDict['Saved'] = True
     return True
 
 #----------------------------------------------------------------------------

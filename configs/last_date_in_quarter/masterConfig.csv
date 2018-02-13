@@ -1,3 +1,3 @@
-stepNo,stepName,type,srcData,metaData,tgtData,tgtPath,outputFormat,disabled
-1,Load factflat,LoadOrc,hdfs://devdatalake/data/extract/factflat,,factflat,,,
-2,Calculate Year_Quarter and MAX date,Calculate,factflat,,max_date_per_quarter,hdfs://devdatalake/data/extract/max_date_per_quarter,parquet,
+stepNo|stepName|type|srcData|metaData|tgtData|tgtPath|outputFormat|disabled
+1|Load factflat|LoadOrc|hdfs://devdatalake/data/extract/factflat||factflat|||
+2|Calculate MAX extract_date per YEAR_QUARTER|OutputQuery|factflat|SELECT YEAR_Q, MAX(EXTRACT_DATE) AS EXTRACT_DATE FROM (SELECT CONCAT(CAST(YEAR(EXTRACT_DATE) as string),'_Q', CAST(CAST((MONTH() - 1)/3 +1 AS integer) as string)) AS YEAR_Q, EXTRACT_DATE FROM (SELECT TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(EXTRACT_DATE, 'yyyyMMdd'))) AS EXTRACT_DATE  FROM (SELECT EXTRACT_DATE FROM factflat GROUP BY EXTRACT_DATE ) AS SubQ ) AS Sub2 ) AS SubQ3 GROUP BY YEAR_Q|max_date_per_quarter|hdfs://devdatalake/user/spark/output/max_date_per_quarter|parquet|

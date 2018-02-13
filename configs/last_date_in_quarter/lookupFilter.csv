@@ -1,1 +1,1 @@
-stepNo,trgtMetric,srcColName,dimFilter,includeExclude,value
+stepNo|trgtMetric|srcColName|dimFilter|includeExclude|value

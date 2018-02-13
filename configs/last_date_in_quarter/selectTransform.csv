@@ -1,3 +1,1 @@
-stepNo,columnNo,tgtColumn,exp,aggregation
-2,1,YEAR_QUARTER,"CONCAT(CAST(YEAR(TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(EXTRACT_DATE, 'yyyyMMdd')))) as string),'_Q', CAST(CAST(MONTH(TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(EXTRACT_DATE, 'yyyyMMdd'))))/4 +1 AS integer) as string))",
-2,2,MAX_DATE,"TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(EXTRACT_DATE, 'yyyyMMdd')))",MAX
+stepNo|columnNo|tgtColumn|exp|aggregation
