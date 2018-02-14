@@ -19,17 +19,26 @@ sc = spark.sparkContext
 #     SELECT 20180201 AS LoadDate, 2 AS KeyColInt, 'A' AS KeyColChar, 300 AS Value, 20180110 AS LastUpdatedDate UNION ALL\
 #     SELECT 20180202 AS LoadDate, 1 AS KeyColInt, 'A' AS KeyColChar, 150 AS Value, 20180201 AS LastUpdatedDate UNION ALL\
 #     SELECT 20180202 AS LoadDate, 2 AS KeyColInt, 'B' AS KeyColChar, 600 AS Value, 20180201 AS LastUpdatedDate UNION ALL\
-#     SELECT 20180203 AS LoadDate, 1 AS KeyColInt, 'B' AS KeyColChar, 250 AS Value, 20180202 AS LastUpdatedDate \
+#     SELECT 20180203 AS LoadDate, 1 AS KeyColInt, 'B' AS KeyColChar, 250 AS Value, 20180102 AS LastUpdatedDate \
 # ")
 
 # df.write.save("c:\\temp\\hdfs\\output\\test_aggregate\\", format="parquet", mode="overwrite", partitionBy="LoadDate")
 
-df = spark.read.load("c:\\temp\\hdfs\\output\\test_aggregate\\", format="parquet")
+# df = spark.read.load("c:\\temp\\hdfs\\output\\test_aggregate\\", format="parquet")
+df = spark.read.load("/user/RashiR/data/ccep_constituents_hdfs/Raw", format="csv", delimiter="|")
 
-mapped = df.rdd.map(lambda row: (",".join((str(row.KeyColInt), str(row.KeyColChar))), row.LastUpdatedDate))
+# Creating mapping group with key = all PK columns concatenated ('pk_column1, pk_column2, ..., pk_columnN'), value = last_updated_date_column
+mappedGroup = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2))), row._c4))
+# Creating mapping group with key = all PK columns concatenated ('pk_column1, pk_column2, ..., pk_columnN, last_updated_date_column'), value = whole_row
+mappedAll = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2), str(row._c4))) , [row]))
 
-groupped = mapped.combineByKey(lambda x: x, lambda x, y: x if x >= y else y, lambda x, y: x if x >= y else y).collect()
+grouppedFilter = mappedGroup.combineByKey(lambda x: x, lambda x, y: x if x >= y else y, lambda x, y: x if x >= y else y)
+grouppedFilterCombined = grouppedFilter.map(lambda row: (",".join(str(c) for c in row), None))
+res = grouppedFilterCombined.join(mappedAll).values().map(lambda row: row[1][0]).collect()
 
-groupped.collect()
+resDF = spark.createDataFrame(res, df.schema)
+resDF.write.save("/user/RashiR/data/ccep_constituents_hdfs/Cooked", format="parquet", mode="overwrite")
+
+# resDF.write.save("c:\\temp\\hdfs\\output\\test_aggregate_filtered\\", format="parquet", mode="overwrite", partitionBy="LoadDate")
 
 pass
