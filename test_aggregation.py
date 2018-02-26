@@ -1,4 +1,3 @@
-
 import datetime
 import pyspark
 from pyspark import SparkConf, SparkContext
@@ -115,31 +114,57 @@ if __name__ == "__main__":
         print('Started processing %s at: %s' % (pathToRaw, datetime.datetime.now()))
             
         # df = spark.read.load("C:\\Temp\\hdfs\\Raw", format="csv", delimiter="|")
-        df = spark.read.load(pathToRaw, format="csv", delimiter="|")
+        if (pathToRaw.split('/')[-1] == "Parquet"):
+            df = spark.read.load(pathToRaw, format="parquet")
+        else:
+            df = spark.read.load(pathToRaw, format="csv", delimiter="|")
 
-        if (len(keyColumns) > 0 and lastUpdatedColumn):
+        # if (len(keyColumns) > 0 and lastUpdatedColumn):
             
-            # Creating mapping group with key = all PK columns concatenated ('pk_column1, ..., pk_columnN'), value = last_updated_date_column
-            #mappedGroup = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2))), row._c4))
-            mappedGroup = df.rdd.map(lambda row: (",".join(str(row[kc]) for kc in keyColumns), row[lastUpdatedColumn]))
+        #     # Creating mapping group with key = all PK columns concatenated ('pk_column1, ..., pk_columnN'), value = last_updated_date_column
+        #     #mappedGroup = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2))), row._c4))
+        #     mappedGroup = df.rdd.map(lambda row: (",".join(str(row[kc]) for kc in keyColumns), row[lastUpdatedColumn]))
             
-            # Creating mapping group with key = all PK columns plus last_updated ('pk_column1, ..., pk_columnN, last_updated_date_column'), value = whole_row
-            #mappedAll = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2), str(row._c4))) , [row]))
-            mappedAll = df.rdd.map(lambda row: (",".join(str(row[kc]) for kc in keyColumns) + "," + str(row[lastUpdatedColumn]) , [row]))
+        #     # Creating mapping group with key = all PK columns plus last_updated ('pk_column1, ..., pk_columnN, last_updated_date_column'), value = whole_row
+        #     #mappedAll = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2), str(row._c4))) , [row]))
+        #     mappedAll = df.rdd.map(lambda row: (",".join(str(row[kc]) for kc in keyColumns) + "," + str(row[lastUpdatedColumn]) , [row]))
             
-            # Extracting maximum last_updated_column_value per PK columns combination
-            grouppedFilter = mappedGroup.combineByKey(lambda x: x, lambda x, y: x if x >= y else y, lambda x, y: x if x >= y else y)
-            # Converting ("pk_column1, ..., pk_columnN", last_updated_date_value) => ("pk_column1, ..., pk_columnN, last_updated_date_value", None)
-            grouppedFilterCombined = grouppedFilter.map(lambda row: (",".join(str(c) for c in row), None))
+        #     # Extracting maximum last_updated_column_value per PK columns combination
+        #     grouppedFilter = mappedGroup.combineByKey(lambda x: x, lambda x, y: x if x >= y else y, lambda x, y: x if x >= y else y)
+        #     # Converting ("pk_column1, ..., pk_columnN", last_updated_date_value) => ("pk_column1, ..., pk_columnN, last_updated_date_value", None)
+        #     grouppedFilterCombined = grouppedFilter.map(lambda row: (",".join(str(c) for c in row), None))
             
-            # Joining aggregated values with the unaggregated dataset and removing columns belonging to grouppedFilterCombined from the results
-            df = grouppedFilterCombined.join(mappedAll).values().map(lambda row: row[1][0]) #.collect()
+        #     # Joining aggregated values with the unaggregated dataset and removing columns belonging to grouppedFilterCombined from the results
+        #     df = grouppedFilterCombined.join(mappedAll).values().map(lambda row: row[1][0]) #.collect()
         
-            df = spark.createDataFrame(df)
+        #     df = spark.createDataFrame(df)
 
         df.createOrReplaceTempView("resTempDF")
         
         sqlCmd = "SELECT %s FROM resTempDF" % ",".join(selectSqlTokens)
+        resDF = spark.sql(sqlCmd)
+        resDF.createOrReplaceTempView("t1")
+        sqlCmd = "SELECT \
+                t1.* \
+            FROM \
+                t1 \
+                    INNER JOIN \
+                    (SELECT \
+                        PRICE_EFFECTIVE_DATE,PPA_SEC_ID,EXCHANGE_CODE,CURRENCY_ISO_CODE,PRICE_PROVIDER_CODE,VALID_FROM, \
+                        MAX(STORE_DATE) AS STORE_DATE \
+                    FROM \
+                        t1 \
+                    GROUP BY \
+                        PRICE_EFFECTIVE_DATE,PPA_SEC_ID,EXCHANGE_CODE,CURRENCY_ISO_CODE,PRICE_PROVIDER_CODE,VALID_FROM) AS sq ON \
+                         \
+                        t1.PRICE_EFFECTIVE_DATE	= sq.PRICE_EFFECTIVE_DATE  AND \
+                        t1.PPA_SEC_ID           = sq.PPA_SEC_ID            AND \
+                        t1.EXCHANGE_CODE        = sq.EXCHANGE_CODE         AND \
+                        t1.CURRENCY_ISO_CODE    = sq.CURRENCY_ISO_CODE     AND \
+                        t1.PRICE_PROVIDER_CODE  = sq.PRICE_PROVIDER_CODE   AND \
+                        t1.VALID_FROM           = sq.VALID_FROM            AND \
+                        t1.STORE_DATE           = sq.STORE_DATE            \
+        "
         resDF = spark.sql(sqlCmd)
         
         resDF.write.save(pathToCooked, format="parquet", mode="overwrite", partitionBy=partitionColumn)
