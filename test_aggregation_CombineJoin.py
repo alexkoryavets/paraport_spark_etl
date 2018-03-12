@@ -21,7 +21,7 @@ sc = spark.sparkContext
 # columns_config_file = "/user/RashiR/Metadata/Table_schema_metadata.csv"
 # main_config_file = "c:\\temp\\hdfs\\config\\Metadata_sqoop.txt"
 # columns_config_file = "c:\\temp\\hdfs\\config\\Table_schema_metadata.csv"
-main_config_file = "/user/RashiR/Metadata/Metadata_sqoop.txt"
+# main_config_file = "/user/RashiR/Metadata/Metadata_sqoop.txt"
 #-----------------------------------------------------------------------------
 def convertInt(text):
     if text is not None:
@@ -221,9 +221,12 @@ if __name__ == "__main__":
                 
                 print('Finished processing %s at: %s' % (foldersToProcess[curPath], datetime.datetime.now()))
                 print('SQL to create table (will be replaced when connectivity to Hive metastore is fixed): \n %s' % sql)
-        except:
+                print(spark.sql("show databases").collect())
+                for curSql in sql.split(";"):
+                    spark.sql(curSql)
+        except Exception, e:
             print('Errors when processing %s' % (tableName))
-            print(str(sys.exc_info()[0]))
+            print(str(e))
         
     workflowEndTime = datetime.datetime.now()    
     message = 'Processing of %i file(s) is done. Started at: %s, ended at %s, total time:%s\n\t' % (mainConfig.count(), workflowStartTime, workflowEndTime, workflowEndTime-workflowStartTime)
