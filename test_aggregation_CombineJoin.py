@@ -23,6 +23,9 @@ sc = spark.sparkContext
 # columns_config_file = "c:\\temp\\hdfs\\config\\Table_schema_metadata.csv"
 # main_config_file = "/user/RashiR/Metadata/Metadata_sqoop.txt"
 #-----------------------------------------------------------------------------
+def isNull(value, replacement):
+    return (replacement if not value else value)
+
 def convertInt(text):
     if text is not None:
         text2 = text.replace('#', '-1')
@@ -94,23 +97,31 @@ if __name__ == "__main__":
             # Setting table name for flatfiles
             if (tableName is None):
                 tableName = hiveTableName
-                colDelimiter = "\t"
+
+            # Setting delimiter and header parameters
+            if (row.FieldSeparator is None):
+                colDelimiter = "|"
+            else:
+                colDelimiter = row.FieldSeparator
+            if (row.Header == "TRUE"):
                 hasHeader = True
+            else:
+                hasHeader = False
             
             # Mapping column names from table schema metadata to column numbers in CSV file
-            # print("Opening config %s" % pathToColumnsConfig)
             columnsConfig = spark.read.load(pathToColumnsConfig, format="csv", delimiter="|", header=False)
-
-            # print("Pre-parsing columns")
-            # print("UPPER(_c0) == UPPER('" + tableName + "') OR UPPER(_c0) == UPPER('" + sourceDatabase + "_" + tableName + "')")
-            for curCol in columnsConfig.filter("UPPER(_c0) == UPPER('" + tableName + "') OR UPPER(_c0) == UPPER('" + sourceDatabase + "_" + tableName + "')").collect():
+            for curCol in columnsConfig.filter(" \
+                UPPER(_c0) == UPPER('" + isNull(tableName, "") + "') OR \
+                UPPER(_c0) == UPPER('" + isNull(sourceDatabase, "") + "_" + isNull(tableName, "") + "') OR \
+                UPPER(_c0) == UPPER('" + isNull(hiveTableName, "") + "') \
+            ").collect():
                 if (hasHeader):
                     srcColName = curCol._c1
                 else:
                     srcColName = '_c' + str(int(curCol._c2) - 1)
                 
                 if row.UniqueIdentifiers and row.DeltaColumn:
-                    if curCol._c1.lower() in row.UniqueIdentifiers.lower().split(','):
+                    if curCol._c1.lower() in [x.strip() for x in row.UniqueIdentifiers.lower().split(',')]:
                         keyColumns.append(srcColName)
                     if curCol._c1.lower() in row.DeltaColumn.lower().split(','):
                         lastUpdatedColumn = srcColName
@@ -130,19 +141,19 @@ if __name__ == "__main__":
                     if (curCol._c4 in ("datetime", "datetime2")):
                         dataframeDatatype = TimestampType()
                         hiveDatatype = "DATE"
-                        selectSqlTokens.append("TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(`%s`, 'yyyy-MM-dd hh:mm:ss'))) AS `%s`" % (srcColName, curCol._c1))
+                        selectSqlTokens.append(["TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(`",str(srcColName),"`, 'yyyy-MM-dd hh:mm:ss'))) AS `", str(curCol._c1),"`"])
                     elif (curCol._c4 == "int"):
                         dataframeDatatype = IntegerType()
                         hiveDatatype = "INT"
-                        selectSqlTokens.append("udfConvertInt(`%s`) AS `%s`" % (srcColName, curCol._c1))
+                        selectSqlTokens.append(["udfConvertInt(`",str(srcColName),"`) AS `",str(curCol._c1),"`"])
                     elif (curCol._c4 == "double"):
                         dataframeDatatype = DoubleType()
                         hiveDatatype = "DOUBLE"
-                        selectSqlTokens.append("udfConvertDouble(`%s`) AS `%s`" % (srcColName, curCol._c1))
+                        selectSqlTokens.append(["udfConvertDouble(`",str(srcColName),"`) AS `",str(curCol._c1),"`"])
                     else:
                         dataframeDatatype = StringType()
                         hiveDatatype = "STRING"
-                        selectSqlTokens.append("`%s` AS `%s`" % (srcColName, curCol._c1))
+                        selectSqlTokens.append(["`",str(srcColName),"` AS `",str(curCol._c1),"`"])
                     
                     outputSchema.append(StructField(curCol._c1, dataframeDatatype, curCol._c3))
                     sqlCols[curCol._c1.lower()] = ("\t`%s` %s" % (str(curCol._c1), hiveDatatype))
@@ -171,23 +182,27 @@ if __name__ == "__main__":
                 else:
                     foldersToProcess[pathToRaw] = pathToCooked
 
+                # Processing every folder or file in the bottom level of the RAW folder
                 for curPath in foldersToProcess:
+                    print("Processing folder: %s" % curPath)
                     df = spark.read.load(pathToRaw, format="csv", delimiter=colDelimiter, header=hasHeader)
                     
+                    # If we have UniqueKey columns and LastUpdated - we're doing deduplication
                     if (len(keyColumns) > 0 and lastUpdatedColumn):
                         
                         # Creating mapping group with key = all PK columns concatenated ('pk_column1, ..., pk_columnN'), value = last_updated_date_column
                         #mappedGroup = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2))), row._c4))
-                        mappedGroup = df.rdd.map(lambda row: (",".join(str(row[kc]) for kc in keyColumns), row[lastUpdatedColumn]))
+                        print(str(keyColumns))
+                        mappedGroup = df.rdd.map(lambda row: (",".join(("" if row[kc] is None else row[kc]).encode('utf-8') for kc in keyColumns), row[lastUpdatedColumn]))
                         
                         # Creating mapping group with key = all PK columns plus last_updated ('pk_column1, ..., pk_columnN, last_updated_date_column'), value = whole_row
                         #mappedAll = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2), str(row._c4))) , [row]))
-                        mappedAll = df.rdd.map(lambda row: (",".join(str(row[kc]) for kc in keyColumns) + "," + str(row[lastUpdatedColumn]) , [row]))
+                        mappedAll = df.rdd.map(lambda row: (",".join(("" if row[kc] is None else row[kc]).encode('utf-8') for kc in keyColumns) + "," + row[lastUpdatedColumn].encode('utf-8') , [row]))
                         
                         # Extracting maximum last_updated_column_value per PK columns combination
                         grouppedFilter = mappedGroup.combineByKey(lambda x: x, lambda x, y: x if x >= y else y, lambda x, y: x if x >= y else y)
                         # Converting ("pk_column1, ..., pk_columnN", last_updated_date_value) => ("pk_column1, ..., pk_columnN, last_updated_date_value", None)
-                        grouppedFilterCombined = grouppedFilter.map(lambda row: (",".join(str(c) for c in row), None))
+                        grouppedFilterCombined = grouppedFilter.map(lambda row: (",".join(("" if c is None else c).encode('utf-8') for c in row), None))
                         # Converting the recordset to persisted to prevent OutOfMemory errors
                         grouppedFilterCombined.persist(pyspark.StorageLevel(True, True, False, False, 1))
                         
@@ -198,8 +213,16 @@ if __name__ == "__main__":
                     
                     df.createOrReplaceTempView("resTempDF")
                     
+                    # If the table has headers, mapping those columns to destination by their positions
+                    i = 0
+                    for curCol in df.schema:
+                        if (i < len(selectSqlTokens)):
+                            selectSqlTokens[i] = "".join(curCol.name if (j == 1 and hasHeader) else selectSqlTokens[i][j] for j in range(len(selectSqlTokens[i])))
+                            i = i + 1
+                        else:
+                            break
+
                     sqlCmd = "SELECT %s FROM resTempDF" % ",".join(selectSqlTokens)
-                    # print(sqlCmd)
                     resDF = spark.sql(sqlCmd)
                     
                     resDF.write.save(foldersToProcess[curPath], format="parquet", mode="overwrite", partitionBy=partitionColumn)
@@ -229,7 +252,7 @@ if __name__ == "__main__":
                     # resDF.write.save("c:\\temp\\hdfs\\output\\test_aggregate_filtered\\", format="parquet", mode="overwrite", partitionBy="LoadDate")
                     
                     print('Finished processing %s at: %s' % (foldersToProcess[curPath], datetime.datetime.now()))
-                    # print('SQL to create table (will be replaced when connectivity to Hive metastore is fixed): \n %s' % sql)
+                    print('SQL to create table (will be replaced when connectivity to Hive metastore is fixed): \n %s' % sql)
                     for curSql in sql.split(";"):
                         # print(curSql)
                         if (len(curSql) > 0):
@@ -239,6 +262,7 @@ if __name__ == "__main__":
         except Exception, e:
             print('Errors when processing %s' % (tableName))
             print(str(e))
+            print('SQL to create table (will be replaced when connectivity to Hive metastore is fixed): \n %s' % sql)
         
     workflowEndTime = datetime.datetime.now()    
     message = 'Processing of %i file(s) is done. Started at: %s, ended at %s, total time:%s\n\t' % (mainConfig.count(), workflowStartTime, workflowEndTime, workflowEndTime-workflowStartTime)
