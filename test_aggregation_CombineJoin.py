@@ -63,7 +63,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         main_config_file = sys.argv[1]
     if len(sys.argv) > 2:
-        columns_config_file = sys.argv[2]
+        main_config_file_filter = sys.argv[2]
 
     spark.udf.register('udfConvertInt', convertInt, IntegerType())
     spark.udf.register('udfConvertDouble', convertDouble, DoubleType())
@@ -73,6 +73,9 @@ if __name__ == "__main__":
     
     #Opretaion|LoadType|threads|Server|Database|Table|WhereClause|DeltaColumn|UniqueIdentifiers|PartitionColumn|TargetLocationRaw|TargetLocationCooked|TargetLocationTableSchema|HiveDatabase|HiveTable|Comments
 
+    if (main_config_file_filter is not None):
+        mainConfig = mainConfig.filter(main_config_file_filter)
+    
     for row in mainConfig.collect():
         try:
             tableName = row.Table
@@ -141,7 +144,11 @@ if __name__ == "__main__":
                     if (curCol._c4 in ("datetime", "datetime2")):
                         dataframeDatatype = TimestampType()
                         hiveDatatype = "DATE"
-                        selectSqlTokens.append(["TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(`",str(srcColName),"`, 'yyyy-MM-dd hh:mm:ss'))) AS `", str(curCol._c1),"`"])
+                        dateFormat = "yyyy-MM-dd hh:mm:ss"
+                        # Temporary workaround for a specific column in APX_HOLDINGS
+                        if (hiveTableName == "APX_HOLDINGS"):
+                            dateFormat = "MM-dd-yyyy"
+                        selectSqlTokens.append(["TO_DATE(FROM_UNIXTIME(UNIX_TIMESTAMP(`",str(srcColName),"`, '",dateFormat,"'))) AS `", str(curCol._c1),"`"])
                     elif (curCol._c4 == "int"):
                         dataframeDatatype = IntegerType()
                         hiveDatatype = "INT"
@@ -193,16 +200,16 @@ if __name__ == "__main__":
                         # Creating mapping group with key = all PK columns concatenated ('pk_column1, ..., pk_columnN'), value = last_updated_date_column
                         #mappedGroup = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2))), row._c4))
                         print(str(keyColumns))
-                        mappedGroup = df.rdd.map(lambda row: (",".join(("" if row[kc] is None else row[kc]).encode('utf-8') for kc in keyColumns), row[lastUpdatedColumn]))
+                        mappedGroup = df.rdd.map(lambda row: (u",".join((u"" if row[kc] is None else unicode(row[kc])) for kc in keyColumns), unicode(row[lastUpdatedColumn])))
                         
                         # Creating mapping group with key = all PK columns plus last_updated ('pk_column1, ..., pk_columnN, last_updated_date_column'), value = whole_row
                         #mappedAll = df.rdd.map(lambda row: (",".join((str(row._c0), str(row._c2), str(row._c4))) , [row]))
-                        mappedAll = df.rdd.map(lambda row: (",".join(("" if row[kc] is None else row[kc]).encode('utf-8') for kc in keyColumns) + "," + row[lastUpdatedColumn].encode('utf-8') , [row]))
+                        mappedAll = df.rdd.map(lambda row: (u",".join((u"" if row[kc] is None else unicode(row[kc])) for kc in keyColumns) + u"," + unicode(row[lastUpdatedColumn]) , [row]))
                         
                         # Extracting maximum last_updated_column_value per PK columns combination
                         grouppedFilter = mappedGroup.combineByKey(lambda x: x, lambda x, y: x if x >= y else y, lambda x, y: x if x >= y else y)
                         # Converting ("pk_column1, ..., pk_columnN", last_updated_date_value) => ("pk_column1, ..., pk_columnN, last_updated_date_value", None)
-                        grouppedFilterCombined = grouppedFilter.map(lambda row: (",".join(("" if c is None else c).encode('utf-8') for c in row), None))
+                        grouppedFilterCombined = grouppedFilter.map(lambda row: (u",".join((u"" if c is None else unicode(c)) for c in row), None))
                         # Converting the recordset to persisted to prevent OutOfMemory errors
                         grouppedFilterCombined.persist(pyspark.StorageLevel(True, True, False, False, 1))
                         
@@ -223,6 +230,7 @@ if __name__ == "__main__":
                             break
 
                     sqlCmd = "SELECT %s FROM resTempDF" % ",".join(selectSqlTokens)
+                    print(sqlCmd)
                     resDF = spark.sql(sqlCmd)
                     
                     resDF.write.save(foldersToProcess[curPath], format="parquet", mode="overwrite", partitionBy=partitionColumn)
